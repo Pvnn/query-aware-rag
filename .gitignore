@@ -1,0 +1,209 @@
+# Python Environment
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.Python
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+
+# C Extensions
+*.so
+
+# Distribution / Packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit Test / Coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.pytest_cache/
+.hypothesis/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+.idea_modules/
+
+# VSCode
+.vscode/
+*.code-workspace
+.history/
+
+# Spyder
+.spyderproject
+.spyproject
+
+# Rope
+.ropeproject
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre
+.pyre/
+
+# pytype
+.pytype/
+
+# Data Files (Large datasets)
+data/
+!data/.gitkeep
+*.csv
+*.tsv
+*.json.gz
+*.jsonl
+*.parquet
+
+# Model Checkpoints & Weights
+checkpoints/
+!checkpoints/.gitkeep
+models/
+!models/.gitkeep
+*.pt
+*.pth
+*.bin
+*.ckpt
+*.safetensors
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+
+# Results & Outputs
+results/
+!results/.gitkeep
+outputs/
+logs/
+runs/
+wandb/
+mlruns/
+*.log
+*.out
+
+# HuggingFace Cache
+.cache/
+huggingface_cache/
+transformers_cache/
+
+# Torch Hub Cache
+torch_cache/
+
+# SpaCy Models (downloaded)
+*.model
+*.vec
+
+# Temporary Files
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+*.tmp
+*.temp
+
+# Large Compressed Files
+*.tar.gz
+*.zip
+*.7z
+*.rar
+
+# Experiment Tracking
+.neptune/
+.mlflow/
+tensorboard_logs/
+
+# Profiling
+*.prof
+*.lprof
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Backup Files
+*.bak
+*.backup
+*~
+
+# Generated Documentation
+docs/_build/
+site/
+
+# Config Files with Secrets (if any)
+configs/secrets.yaml
+configs/api_keys.yaml
+
+# PyTorch Lightning
+lightning_logs/
+
+# Evaluation Results
+evaluation_results/
+!evaluation_results/.gitkeep
+
+# Submission Files
+submission/
+*.submission
+
+# Compressed Model Archives
+*.tar
+*.tgz
