@@ -1,12 +1,17 @@
-# Python Environment
+################################
+# Python Environments
+################################
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+.venv/
 .Python
 
-# Python Cache
+################################
+# Python Cache / Bytecode
+################################
 __pycache__/
 *.py[cod]
 *$py.class
@@ -14,14 +19,17 @@ __pycache__/
 *.pyo
 *.pyd
 
+################################
 # C Extensions
+################################
 *.so
 
+################################
 # Distribution / Packaging
-.Python
+################################
 build/
-develop-eggs/
 dist/
+develop-eggs/
 downloads/
 eggs/
 .eggs/
@@ -37,11 +45,15 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+################################
 # PyInstaller
+################################
 *.manifest
 *.spec
 
-# Unit Test / Coverage
+################################
+# Testing / Coverage
+################################
 htmlcov/
 .tox/
 .nox/
@@ -51,58 +63,58 @@ htmlcov/
 nosetests.xml
 coverage.xml
 *.cover
-*.log
 .pytest_cache/
 .hypothesis/
 
-# Jupyter Notebook
-.ipynb_checkpoints
-*.ipynb_checkpoints/
+################################
+# Jupyter
+################################
+.ipynb_checkpoints/
 notebooks/.ipynb_checkpoints/
 
-# PyCharm
+################################
+# IDEs / Editors
+################################
 .idea/
+.vscode/
 *.iml
 *.iws
 .idea_modules/
-
-# VSCode
-.vscode/
-*.code-workspace
 .history/
-
-# Spyder
 .spyderproject
 .spyproject
-
-# Rope
 .ropeproject
 
-# mypy
+################################
+# Type Checking
+################################
 .mypy_cache/
 .dmypy.json
 dmypy.json
-
-# Pyre
+.pytype/
 .pyre/
 
-# pytype
-.pytype/
-
-# Data Files (Large datasets)
+################################
+# DATA (IMPORTANT SECTION)
+################################
+# Ignore all raw & processed datasets
 data/
-!data/.gitkeep
-*.csv
-*.tsv
-*.json.gz
-*.jsonl
-*.parquet
+data/**
 
+# Allow empty placeholders
+!data/.gitkeep
+
+################################
+# BUT TRACK DATA PROCESSING CODE
+################################
+!src/data/
+!src/data/*.py
+
+################################
 # Model Checkpoints & Weights
+################################
 checkpoints/
-!checkpoints/.gitkeep
 models/
-!models/.gitkeep
 *.pt
 *.pth
 *.bin
@@ -113,97 +125,77 @@ models/
 *.pkl
 *.pickle
 
-# Results & Outputs
+################################
+# Outputs / Logs / Experiments
+################################
 results/
-!results/.gitkeep
 outputs/
 logs/
 runs/
 wandb/
 mlruns/
+tensorboard_logs/
 *.log
 *.out
 
-# HuggingFace Cache
+################################
+# HuggingFace / Torch Cache
+################################
 .cache/
 huggingface_cache/
 transformers_cache/
-
-# Torch Hub Cache
 torch_cache/
 
-# SpaCy Models (downloaded)
-*.model
-*.vec
-
-# Temporary Files
+################################
+# Temporary / OS Files
+################################
 *.swp
 *.swo
 *~
 .DS_Store
 Thumbs.db
+Desktop.ini
 *.tmp
 *.temp
 
-# Large Compressed Files
+################################
+# Archives
+################################
+*.tar
 *.tar.gz
+*.tgz
 *.zip
 *.7z
 *.rar
 
-# Experiment Tracking
-.neptune/
-.mlflow/
-tensorboard_logs/
-
-# Profiling
-*.prof
-*.lprof
-
-# Database
+################################
+# Databases
+################################
 *.db
 *.sqlite
 *.sqlite3
 
+################################
 # Environment Variables
+################################
 .env
-.env.local
+.envC.env.local
 .env.*.local
 
-# System Files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-Desktop.ini
-
-# Backup Files
-*.bak
-*.backup
-*~
-
-# Generated Documentation
+################################
+# Docs / Site
+################################
 docs/_build/
 site/
 
-# Config Files with Secrets (if any)
+################################
+# Secrets (never commit)
+################################
 configs/secrets.yaml
 configs/api_keys.yaml
 
-# PyTorch Lightning
-lightning_logs/
-
-# Evaluation Results
-evaluation_results/
-!evaluation_results/.gitkeep
-
-# Submission Files
+################################
+# Submissions
+################################
 submission/
 *.submission
-
-# Compressed Model Archives
-*.tar
-*.tgz
