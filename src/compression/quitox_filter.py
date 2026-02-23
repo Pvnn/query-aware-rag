@@ -33,7 +33,6 @@ class QuitoxCoarseFilter:
     self.tokenizer = T5Tokenizer.from_pretrained(model_name, legacy=False)
     self.model = T5ForConditionalGeneration.from_pretrained(
       model_name, 
-      output_attentions=True
     ).to(self.device)
     self.model.eval()
 
@@ -44,7 +43,6 @@ class QuitoxCoarseFilter:
 
   def _reconstruct(self, tokens: List[str], attention: np.ndarray):
     """
-    Refined version of the 'reconstruct' util.
     Merges subwords and aggregates attention scores.
     """
     reconstructed_words = []
@@ -114,7 +112,7 @@ class QuitoxCoarseFilter:
       
       # Forward Pass
       with torch.no_grad():
-        outputs = self.model(input_ids=input_tensor, decoder_input_ids=decoder_input)
+        outputs = self.model(input_ids=input_tensor, decoder_input_ids=decoder_input, output_attentions=True)
     
       # Extract Attention (Last Layer, Head Avg, First Dec Token)
       # Shape: [seq_len]

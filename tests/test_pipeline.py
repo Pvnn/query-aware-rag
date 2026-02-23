@@ -28,7 +28,7 @@ def test_pipeline():
   
   # Run query
   query = "How do SSDs work?"
-  result = pipeline.run(query, top_k=3)
+  result = pipeline.run(query, top_k=7)
   
   # Validate
   assert len(result['answer']) > 0
