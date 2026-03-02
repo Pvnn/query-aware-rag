@@ -16,11 +16,40 @@ class LabelGenerator:
 
     def is_correct(self, pred, gold):
         """
-        Basic exact-match style normalization.
+        Soft matching suitable for LLMs.
+        This allows:
+        - punctuation differences
+        - extra words around the answer
+        - variations like 'yes', 'Yes', 'Yeah'
         """
-        pred = pred.strip().lower()
-        gold = gold.strip().lower()
-        return pred == gold
+
+        pred = pred.lower().strip()
+        gold = gold.lower().strip()
+
+        # remove punctuation
+        import re
+        pred = re.sub(r"[^a-z0-9\s]", "", pred)
+        gold = re.sub(r"[^a-z0-9\s]", "", gold)
+
+        # exact match
+        if pred == gold:
+            return True
+
+        # gold exists inside pred
+        if gold in pred:
+            return True
+
+        # simple yes/no normalization
+        yes_set = {"yes", "yeah", "yep"}
+        no_set = {"no", "nope"}
+
+        if gold in yes_set and pred in yes_set:
+            return True
+        if gold in no_set and pred in no_set:
+            return True
+
+        return False
+    
 
     def find_smallest_k(self, query, gold_answer):
         Ks = [2, 4, 6, 8]
