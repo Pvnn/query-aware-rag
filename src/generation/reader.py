@@ -14,7 +14,7 @@ class RAGReader:
           'prompt': 'test',
           'stream': False
         },
-        timeout=10
+        timeout=60
       )
       if test_response.status_code == 200:
         print(f"Using Ollama backend with {model_name}\n")
