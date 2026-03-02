@@ -27,11 +27,13 @@ label_gen = LabelGenerator(retriever, reader)
 print("\n===== Testing Label Generator =====")
 
 for sample in samples:
+    gold_context = sample.supporting_facts.get("gold_context")
     print("\n--------------------------------------")
     print("Question:", sample.question)
     print("Gold Answer:", sample.answer)
+    print(f"Gold Context:\n{gold_context}")
 
-    true_K = label_gen.find_smallest_k(sample.question, sample.answer)
+    true_K = label_gen.find_smallest_k(sample.question, sample.answer, gold_context)
     print("TRUE K label:", true_K)
 
     retrieved = retriever.retrieve(sample.question, top_k=10)

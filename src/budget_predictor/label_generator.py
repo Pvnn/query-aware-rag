@@ -50,9 +50,29 @@ class LabelGenerator:
 
         return False
     
+    def find_gold_overlap(self, gold_context: str, retrieved_docs: list[str]):
+        """
+        Returns list of (doc_index, matching_sentences)
+        """
+        gold_sents = [s.strip() for s in gold_context.split(".") if s.strip()]
+        overlaps = []
 
-    def find_smallest_k(self, query, gold_answer):
-        Ks = [2, 4, 6, 8]
+        for i, doc in enumerate(retrieved_docs):
+            doc_lower = doc.lower()
+            matched = []
+
+            for gs in gold_sents:
+                if gs.lower() in doc_lower:
+                    matched.append(gs)
+
+            if matched:
+                overlaps.append((i, matched))
+
+        return overlaps
+    
+
+    def find_smallest_k(self, query, gold_answer, gold_context):
+        Ks = [2, 4, 6, 8, 10]
 
         retrieved = self.retriever.retrieve(query, top_k=10)
         docs_text = [d["text"] for d, _ in retrieved]
@@ -64,7 +84,21 @@ class LabelGenerator:
 
             if self.is_correct(pred, gold_answer):
                 return K
+       
+        # Could not generate a correct answer then
+        print("\n❌ No correct prediction up to K=10")
+        print("Last prediction:", pred)
 
+        overlaps = self.find_gold_overlap(gold_context, docs_text)
+
+        if not overlaps:
+            print("\n🚫 Gold context NOT retrieved in top-10")
+        else:
+            print("\n✅ Gold context WAS retrieved:")
+            for doc_id, matched_sents in overlaps:
+                print(f"\n[Doc rank {doc_id + 1}]")
+                for s in matched_sents:
+                    print("  •", s)
         return None
 
     def generate_training_pairs(self, dataset, max_samples=500):
