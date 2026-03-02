@@ -60,7 +60,7 @@ class LabelGenerator:
         for K in Ks:
             selected_docs = docs_text[:K]
 
-            pred = self.reader.answer(query, selected_docs)
+            pred = self.reader.generate_answer(query, selected_docs)
 
             if self.is_correct(pred, gold_answer):
                 return K
