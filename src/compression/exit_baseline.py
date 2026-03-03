@@ -15,79 +15,48 @@ class ExitBaselineCompressor:
         model_name="doubleyyh/exit-gemma-2b",
         threshold=0.5
     ):
-        print("Initializing ExitBaselineCompressor...")
+        print(f"Initializing ExitBaselineCompressor...")
         print(f"Model: {model_name}")
         print(f"Threshold: {threshold}")
 
-        self.threshold = threshold
-        self.model_name = model_name
-
-        # ----------------------------
-        # Check GPU availability
-        # ----------------------------
-        if torch.cuda.is_available():
+        if not torch.cuda.is_available():
+            print("⚠️ Warning: CUDA not available, using CPU (will be slow)")
+        else:
             print(f"✓ Using GPU: {torch.cuda.get_device_name(0)}")
 
-            print("Loading tokenizer...")
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                "google/gemma-2b-it"
-            )
+        self.threshold = threshold
 
-            print("Loading model with 4-bit quantization...")
+        print("Loading tokenizer...")
+        self.tokenizer = AutoTokenizer.from_pretrained("google/gemma-2b-it")
 
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4"
-            )
+        print("Loading model with 4-bit quantization...")
 
-            self.model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                quantization_config=quantization_config,
-                device_map="auto",
-                token=token
-            )
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4"
+        )
 
-        else:
-            print("⚠️ CUDA not available. Loading model on CPU safely...")
-
-            print("Loading tokenizer...")
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                "google/gemma-2b-it"
-            )
-
-            print("Loading model on CPU (no quantization)...")
-
-            self.model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                device_map="cpu",
-                token=token
-            )
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            quantization_config=quantization_config,
+            device_map="auto",
+            token=token
+        )
 
         print("Loading spaCy sentence tokenizer...")
         self.nlp = spacy.load("en_core_web_sm")
 
         print(f"✓ Compressor initialized on device: {self.model.device}\n")
 
-    # ---------------------------------------------------------
-    # Sentence Decomposition
-    # ---------------------------------------------------------
     def decompose_sentences(self, text):
         doc = self.nlp(text)
         sentences = [sent.text.strip() for sent in doc.sents]
         return [s for s in sentences if len(s) > 0]
 
-    # ---------------------------------------------------------
-    # Sentence Classification (EXIT)
-    # ---------------------------------------------------------
     def classify_sentence(self, query, sentence, document):
-        prompt = (
-            f"Query: {query}\n"
-            f"Document: {document}\n"
-            f"Sentence: {sentence}\n"
-            f"Relevant?"
-        )
+        prompt = f"Query: {query}\nDocument: {document}\nSentence: {sentence}\nRelevant?"
 
         inputs = self.tokenizer(
             prompt,
@@ -110,13 +79,10 @@ class ExitBaselineCompressor:
 
         return yes_prob
 
-    # ---------------------------------------------------------
-    # Compress Document
-    # ---------------------------------------------------------
     def compress(self, query, document):
         sentences = self.decompose_sentences(document)
 
-        if not sentences:
+        if len(sentences) == 0:
             return ""
 
         selected_sentences = []
@@ -128,13 +94,10 @@ class ExitBaselineCompressor:
 
         return " ".join(selected_sentences)
 
-    # ---------------------------------------------------------
-    # Compress with Stats
-    # ---------------------------------------------------------
     def compress_with_stats(self, query, document):
         sentences = self.decompose_sentences(document)
 
-        if not sentences:
+        if len(sentences) == 0:
             return {
                 "compressed_text": "",
                 "original_length": 0,
@@ -166,10 +129,8 @@ class ExitBaselineCompressor:
             "compressed_text": compressed_text,
             "original_length": len(document),
             "compressed_length": len(compressed_text),
-            "compression_ratio": (
-                len(compressed_text) / len(document)
-                if len(document) > 0 else 0
-            ),
+            "compression_ratio": len(compressed_text) / len(document)
+            if len(document) > 0 else 0,
             "sentences_kept": len(selected_sentences),
             "sentences_total": len(sentences),
             "sentence_scores": sentence_scores
