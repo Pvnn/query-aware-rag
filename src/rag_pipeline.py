@@ -4,16 +4,27 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.retrieval.retriever import DenseRetriever
-from src.compression.exit_baseline import ExitBaselineCompressor
+from src.compression.hybrid_compressor import HybridCompressor
 from src.generation.reader import RAGReader
 import time
 
 class QueryAwareRAG:
-  def __init__(self, token):
+  def __init__(self, token, use_coarse=True, use_fine=True):
     print("Initializing Query-Aware RAG Pipeline...")
+    
+    # Pipeline Components
     self.retriever = DenseRetriever()
-    self.compressor = ExitBaselineCompressor(token=token)
+    
+    # Using Hybrid Compressor
+    self.compressor = HybridCompressor(exit_token=token)
+    
+    # Configuration flags
+    self.use_coarse = use_coarse
+    self.use_fine = use_fine
+    
     self.reader = RAGReader()
+    
+    print(f"Config: Coarse={self.use_coarse}, Fine={self.use_fine}")
     print("✓ Pipeline initialized\n")
   
   def run(self, query, top_k=5):
@@ -34,20 +45,47 @@ class QueryAwareRAG:
     original_tokens = 0
     compressed_tokens = 0
     
-    for doc, score in retrieved_docs:
+    # Process each document individually through the Hybrid Pipeline
+    for i, (doc, score) in enumerate(retrieved_docs):
       original_text = doc['text']
-      compressed_text = self.compressor.compress(query, original_text)
+      
+      # Run Hybrid Compression
+      result = self.compressor.compress(
+        query=query, 
+        context=original_text,
+        coarse_ratio=0.7,      # Aggressive coarse filtering
+        fine_threshold=0.5,    # Standard fine filtering
+        use_coarse=self.use_coarse,
+        use_fine=self.use_fine
+      )
+      
+      compressed_text = result['final_text']
       compressed_docs.append(compressed_text)
       
+      # Stats logging
+      input_len = result['metrics']['original_count']
+      s3_len = result['metrics']['stage3_count']
+      final_len = result['metrics']['final_count']
+      
       # Rough token count (words * 1.3)
-      original_tokens += len(original_text.split()) * 1.3
-      compressed_tokens += len(compressed_text.split()) * 1.3
+      orig_tok = len(original_text.split()) * 1.3
+      comp_tok = len(compressed_text.split()) * 1.3
+      
+      original_tokens += orig_tok
+      compressed_tokens += comp_tok
+      
+      print(f"  Doc {i+1}: {input_len} sents -> {s3_len} (Coarse) -> {final_len} (Fine)")
     
     context = " ".join(compressed_docs)
     compression_time = time.time() - start
-    compression_ratio = (1 - compressed_tokens/original_tokens) * 100 if original_tokens > 0 else 0
+    
+    if original_tokens > 0:
+      compression_ratio = (1 - compressed_tokens/original_tokens) * 100 
+    else:
+      compression_ratio = 0
+      
     print(f"  ✓ Compressed in {compression_time:.2f}s")
-    print(f"  ✓ Compression ratio: {compression_ratio:.1f}% ({int(original_tokens)} → {int(compressed_tokens)} tokens)\n")
+    print(f"  ✓ Total Ratio: {compression_ratio:.1f}% ({int(original_tokens)} → {int(compressed_tokens)} tokens)\n")
     
     # Step 3: Generation
     print(f"[3/3] Generating answer...")
