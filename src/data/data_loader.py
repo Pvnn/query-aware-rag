@@ -15,7 +15,7 @@ class QAExample:
     question: str
     answer: str
     documents: List[Document]
-    supporting_facts: List | None = None
+    supporting_facts: dict | None = None
 
 
 class HotpotQALoader:
@@ -28,20 +28,50 @@ class HotpotQALoader:
     def __getitem__(self, idx):
         sample = self.dataset[idx]
 
-        documents = [
-            Document(
-                title=title,
-                text=" ".join(sentences)
+        documents = []
+        title_to_text = {}
+
+        # Build documents (unchanged behavior)
+        for title, sentences in zip(
+            sample["context"]["title"],
+            sample["context"]["sentences"]
+        ):
+            text = " ".join(sentences)
+            doc = Document(title=title, text=text)
+            documents.append(doc)
+            title_to_text[title] = text
+
+        # ---- FIX: enrich supporting_facts robustly
+        sf = sample.get("supporting_facts")
+
+        if sf is not None:
+            supporting_titles = list(set(sf.get("title", [])))
+
+            supporting_docs = [
+                {
+                    "title": t,
+                    "text": title_to_text[t]
+                }
+                for t in supporting_titles
+                if t in title_to_text
+            ]
+
+            gold_context = "\n\n".join(
+                d["text"] for d in supporting_docs
             )
-            for title, sentences in zip(
-                sample["context"]["title"],
-                sample["context"]["sentences"]
-            )
-        ]
+
+            supporting_facts = {
+                "titles": supporting_titles,
+                "documents": supporting_docs,
+                "gold_context": gold_context,
+                "raw": sf,  # preserve original HF structure
+            }
+        else:
+            supporting_facts = None
 
         return QAExample(
             question=sample["question"],
             answer=sample["answer"],
             documents=documents,
-            supporting_facts=sample.get("supporting_facts")
+            supporting_facts=supporting_facts,
         )
