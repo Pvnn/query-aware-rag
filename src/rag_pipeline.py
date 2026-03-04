@@ -5,7 +5,7 @@ sys.path.insert(0, str(project_root))
 
 from src.retrieval.retriever import DenseRetriever
 from src.compression.hybrid_compressor import HybridCompressor
-from src.generation.reader import RAGReader
+from src.generation.gemma_reader import GemmaRAGReader
 import time
 
 class QueryAwareRAG:
@@ -22,7 +22,7 @@ class QueryAwareRAG:
     self.use_coarse = use_coarse
     self.use_fine = use_fine
     
-    self.reader = RAGReader()
+    self.reader = GemmaRAGReader()
     
     print(f"Config: Coarse={self.use_coarse}, Fine={self.use_fine}")
     print("✓ Pipeline initialized\n")
