@@ -65,13 +65,15 @@ def test_pipeline():
           if doc_details.get('kept_units'):
               print("    ✅ KEPT Text:")
               for u in doc_details['kept_units']:
-                  text_snippet = (u['text'][:85] + '...') if len(u['text']) > 85 else u['text']
+                  #text_snippet = (u['text'][:85] + '...') if len(u['text']) > 85 else u['text']
+                  text_snippet = u['text']
                   print(f"       [{u['score']:.2f}] {text_snippet}")
                   
           if doc_details.get('removed_units'):
               print("    ❌ REMOVED Text:")
               for u in doc_details['removed_units']:
-                  text_snippet = (u['text'][:85] + '...') if len(u['text']) > 85 else u['text']
+                  #text_snippet = (u['text'][:85] + '...') if len(u['text']) > 85 else u['text']
+                  text_snippet = u['text']
                   print(f"       [{u['score']:.2f}] {text_snippet}")
 
     # --- ANSWER COMPARISON SECTION ---
@@ -92,9 +94,8 @@ def test_pipeline():
     if result.get('original_docs_answer'):
         orig_len = len(result['original_docs_answer'].split())
         comp_len = len(result['answer'].split())
-        print(f"💡 Info: Original answer length: {orig_len} words | Compressed answer length: {comp_len} words")
+        print(f"Info: Original answer length: {orig_len} words | Compressed answer length: {comp_len} words")
         
-    print("\n🚀 Test Complete.")
 
 if __name__ == "__main__":
     test_pipeline()
