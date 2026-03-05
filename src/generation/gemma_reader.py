@@ -53,7 +53,7 @@ class GemmaRAGReader:
       max_new_tokens: Maximum tokens to generate
       
     Returns:
-      Generated answer string
+      Dictionary containing the generated answer and token usage statistics.
     """
     # Strict prompt to enforce context-only answering
     prompt = f"""You are a helpful assistant that answers questions ONLY using the provided context. Do not use any external knowledge.
@@ -75,11 +75,32 @@ Answer (using only the context above):"""
         )
       )
       
+      # Default usage tracking in case it's blocked
+      usage_stats = {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0
+      }
+      
+      # Extract exact token usage from the API response
+      if hasattr(response, 'usage_metadata') and response.usage_metadata:
+        usage_stats = {
+          "prompt_tokens": getattr(response.usage_metadata, 'prompt_token_count', 0) or 0,
+          "completion_tokens": getattr(response.usage_metadata, 'candidates_token_count', 0) or 0,
+          "total_tokens": getattr(response.usage_metadata, 'total_token_count', 0) or 0
+        }
+      
       # Handle potential empty responses from safety filters
       if not response.text:
-        return "Error: Output was blocked by safety filters or returned empty."
+        return {
+          "answer": "Error: Output was blocked by safety filters or returned empty.",
+          "usage": usage_stats
+        }
         
-      return response.text.strip()
+      return {
+        "answer": response.text.strip(),
+        "usage": usage_stats
+      }
       
     except Exception as e:
       raise RuntimeError(f"GenAI API error during generation: {str(e)}")

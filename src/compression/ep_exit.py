@@ -83,7 +83,7 @@ class EPExitCompressor:
     
     selected_units = []
     for unit in units:
-      score = self.classify_sentence(query, unit.text, document)
+      score, _ = self.classify_sentence(query, unit.text, document)
       if score > self.threshold:
         selected_units.append(unit)
         
@@ -104,6 +104,7 @@ class EPExitCompressor:
         "evidence_units_total": 0,
         "evidence_units_kept_count": 0,
         "evidence_units_removed_count": 0,
+        "total_tokens_consumed": 0,
         "all_units": [],
         "kept_units": [],
         "removed_units": []
@@ -116,9 +117,11 @@ class EPExitCompressor:
     kept_units_info = []
     removed_units_info = []
     sentences_kept_count = 0
+    total_tokens_consumed = 0
     
     for unit in units:
-      score = self.classify_sentence(query, unit.text, document)
+      score, token_count = self.classify_sentence(query, unit.text, document)
+      total_tokens_consumed += token_count
       kept = score > self.threshold
       
       unit_info = {
@@ -150,6 +153,7 @@ class EPExitCompressor:
       "evidence_units_total": len(units),
       "evidence_units_kept_count": len(kept_units_info),
       "evidence_units_removed_count": len(removed_units_info),
+      "total_tokens_consumed": total_tokens_consumed,
       "all_units": all_units_info,
       "kept_units": kept_units_info,
       "removed_units": removed_units_info

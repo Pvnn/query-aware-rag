@@ -86,10 +86,10 @@ class QuitoxCoarseFilter:
         
     return reconstructed_words, np.array(reconstructed_attn)
 
-  def _get_window_scores(self, query: str, text: str) -> Tuple[List[str], np.ndarray]:
+  def _get_window_scores(self, query: str, text: str) -> Tuple[List[str], np.ndarray, int]:
     """
     Processes text in windows to handle length > 512 tokens.
-    Returns aggregated WORDS and their SMOOTHED SCORES.
+    Returns aggregated WORDS, their SMOOTHED SCORES, and TOTAL TOKENS CONSUMED.
     """
     # 1. Tokenize entire text and query
     text_ids = self.tokenizer.encode(text, add_special_tokens=False)
@@ -100,6 +100,7 @@ class QuitoxCoarseFilter:
     
     all_words = []
     all_scores = []
+    total_tokens_consumed = 0
     
     # 2. Process in Chunks (Sliding Window)
     for i in range(0, len(text_ids), max_chunk):
@@ -107,6 +108,10 @@ class QuitoxCoarseFilter:
       
       # Prepare Input: <Chunk> <Query> <EOS>
       input_ids = chunk_ids + query_ids + [self.tokenizer.eos_token_id]
+      
+      # Track exact tokens sent to the model for this pass
+      total_tokens_consumed += len(input_ids)
+      
       input_tensor = torch.tensor([input_ids]).to(self.device)
       decoder_input = torch.tensor([[self.model.config.decoder_start_token_id]]).to(self.device)
       
@@ -128,21 +133,25 @@ class QuitoxCoarseFilter:
       all_words.extend(words)
       all_scores.extend(scores)
 
-    return all_words, np.array(all_scores)
+    return all_words, np.array(all_scores), total_tokens_consumed
 
-  def compress(self, query: str, sentences: List[str], compression_ratio: float) -> List[str]:
+  def compress(self, query: str, sentences: List[str], compression_ratio: float) -> dict:
     """
     Main filtering pipeline.
+    Returns a dictionary with 'filtered_sentences' and 'total_tokens_consumed'.
     """
     if not sentences:
-      return []
+      return {
+        "filtered_sentences": [],
+        "total_tokens_consumed": 0
+      }
 
     # 1. Join sentences to preserve global flow (needed for proper tokenization reconstruction)
     # We use a special separator that T5 treats as a space or punctuation to avoid merging words across sentences.
     full_text = " ".join(sentences)
     
     # 2. Get Word-Level Scores (with Windowing protection)
-    words, scores = self._get_window_scores(query, full_text)
+    words, scores, total_tokens = self._get_window_scores(query, full_text)
     
     # 3. Apply Gaussian Smoothing (from utils)
     # Sigma=1.0 spreads importance to immediate neighbors
@@ -187,4 +196,9 @@ class QuitoxCoarseFilter:
     top_sentences_set = set(sent for sent, score in scored_sentences[:num_keep])
     
     # Return in original order
-    return [s for s in sentences if s in top_sentences_set]
+    filtered_sentences = [s for s in sentences if s in top_sentences_set]
+    
+    return {
+      "filtered_sentences": filtered_sentences,
+      "total_tokens_consumed": total_tokens
+    }
