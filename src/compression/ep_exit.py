@@ -5,166 +5,152 @@ from sentence_transformers import SentenceTransformer, util
 
 from src.compression.exit_baseline import ExitBaselineCompressor
 
-
-# ---------------------------------------------------------
-# Evidence Unit Dataclass
-# ---------------------------------------------------------
 @dataclass
 class EvidenceUnit:
-    sentences: List[str]
-    start_idx: int
-    end_idx: int
+  sentences: List[str]
+  start_idx: int
+  end_idx: int
 
-    @property
-    def text(self) -> str:
-        return " ".join(self.sentences)
+  @property
+  def text(self) -> str:
+    return " ".join(self.sentences)
 
-
-# ---------------------------------------------------------
-# EP-EXIT Compressor
-# ---------------------------------------------------------
 class EPExitCompressor:
-    """
-    Evidence-Preserving EXIT (EP-EXIT)
+  def __init__(
+    self,
+    token,
+    model_name="doubleyyh/exit-gemma-2b",
+    threshold=0.5,
+    embedding_model="all-MiniLM-L6-v2",
+    similarity_threshold=0.45,
+    locality_window=2
+  ):
+    print("Initializing EPExitCompressor...")
+    self.similarity_threshold = similarity_threshold
+    self.locality_window = locality_window
+    self.threshold = threshold
+    
+    self.embedder = SentenceTransformer(embedding_model)
+    self.exit = ExitBaselineCompressor(
+      token=token, 
+      model_name=model_name, 
+      threshold=threshold
+    )
+    print("✓ EP-EXIT initialized\n")
 
-    1) Group semantically similar nearby sentences using a graph
-    2) Apply original EXIT classifier on evidence units
-    3) Use the same EXIT threshold logic (0.5)
-    """
+  def decompose_sentences(self, text):
+    return self.exit.decompose_sentences(text)
 
-    def __init__(
-        self,
-        token: str,
-        embedding_model: str = "all-MiniLM-L6-v2",
-        similarity_threshold: float = 0.65,
-        locality_window: int = 2,
-    ):
-        """
-        Args:
-            token: HuggingFace token for EXIT model
-            embedding_model: sentence embedding model for grouping
-            similarity_threshold: threshold for semantic edge creation
-            locality_window: max sentence distance allowed for grouping
-        """
+  def classify_sentence(self, query, sentence, document):
+    return self.exit.classify_sentence(query, sentence, document)
 
-        print("Initializing EP-EXIT...")
+  def build_similarity_graph(self, sentences):
+    embeddings = self.embedder.encode(sentences, convert_to_tensor=True)
+    sim_matrix = util.cos_sim(embeddings, embeddings)
+    n = len(sentences)
+    G = nx.Graph()
+    G.add_nodes_from(range(n))
+    
+    for i in range(n):
+      for j in range(i + 1, n):
+        if abs(i - j) > self.locality_window:
+          continue
+        if float(sim_matrix[i][j]) >= self.similarity_threshold:
+          G.add_edge(i, j)
+    return G
 
-        # Embedding model for grouping only
-        self.embedder = SentenceTransformer(embedding_model)
-        self.similarity_threshold = similarity_threshold
-        self.locality_window = locality_window
+  def extract_evidence_units(self, graph, sentences):
+    units = []
+    for component in nx.connected_components(graph):
+      idxs = sorted(component)
+      unit_sentences = [sentences[i] for i in idxs]
+      units.append(
+        EvidenceUnit(
+          sentences=unit_sentences,
+          start_idx=idxs[0],
+          end_idx=idxs[-1],
+        )
+      )
+    return units
 
-        # Reuse original EXIT classifier
-        self.exit = ExitBaselineCompressor(token=token)
+  def compress(self, query, document):
+    sentences = self.decompose_sentences(document)
+    if not sentences:
+      return ""
+      
+    graph = self.build_similarity_graph(sentences)
+    units = self.extract_evidence_units(graph, sentences)
+    
+    selected_units = []
+    for unit in units:
+      score = self.classify_sentence(query, unit.text, document)
+      if score > self.threshold:
+        selected_units.append(unit)
+        
+    ordered = sorted(selected_units, key=lambda u: u.start_idx)
+    return " ".join(u.text for u in ordered)
 
-        print("✓ EP-EXIT initialized\n")
+  def compress_with_stats(self, query, document):
+    sentences = self.decompose_sentences(document)
+    
+    if not sentences:
+      return {
+        "compressed_text": "",
+        "original_length": 0,
+        "compressed_length": 0,
+        "compression_ratio": 0.0,
+        "sentences_kept": 0,
+        "sentences_total": 0,
+        "evidence_units_total": 0,
+        "evidence_units_kept_count": 0,
+        "evidence_units_removed_count": 0,
+        "all_units": [],
+        "kept_units": [],
+        "removed_units": []
+      }
 
-    # ---------------------------------------------------------
-    # STEP 1: Sentence Segmentation (reuse EXIT splitter)
-    # ---------------------------------------------------------
-    def split_into_sentences(self, text: str) -> List[str]:
-        return self.exit.decompose_sentences(text)
-
-    # ---------------------------------------------------------
-    # STEP 2: Build Semantic Similarity Graph
-    # ---------------------------------------------------------
-    def build_similarity_graph(self, sentences: List[str]) -> nx.Graph:
-
-        embeddings = self.embedder.encode(sentences, convert_to_tensor=True)
-        sim_matrix = util.cos_sim(embeddings, embeddings)
-
-        n = len(sentences)
-        G = nx.Graph()
-        G.add_nodes_from(range(n))
-
-        for i in range(n):
-            for j in range(i + 1, n):
-
-                # Locality constraint (prevents long-distance grouping)
-                if abs(i - j) > self.locality_window:
-                    continue
-
-                if float(sim_matrix[i][j]) >= self.similarity_threshold:
-                    G.add_edge(i, j)
-
-        return G
-
-    # ---------------------------------------------------------
-    # STEP 3: Extract Evidence Units (Connected Components)
-    # ---------------------------------------------------------
-    def extract_evidence_units(
-        self,
-        graph: nx.Graph,
-        sentences: List[str],
-    ) -> List[EvidenceUnit]:
-
-        units = []
-
-        for component in nx.connected_components(graph):
-            idxs = sorted(component)
-
-            unit_sentences = [sentences[i] for i in idxs]
-
-            units.append(
-                EvidenceUnit(
-                    sentences=unit_sentences,
-                    start_idx=idxs[0],
-                    end_idx=idxs[-1],
-                )
-            )
-
-        return units
-
-    # ---------------------------------------------------------
-    # STEP 4: EXIT Classification on Evidence Units
-    # ---------------------------------------------------------
-    def filter_units(
-        self,
-        query: str,
-        document: str,
-        units: List[EvidenceUnit],
-    ) -> List[EvidenceUnit]:
-
-        selected_units = []
-
-        for unit in units:
-            score = self.exit.classify_sentence(
-                query=query,
-                sentence=unit.text,
-                document=document,
-            )
-
-            # EXIT threshold logic (unchanged)
-            if score > self.exit.threshold:
-                selected_units.append(unit)
-
-        return selected_units
-
-    # ---------------------------------------------------------
-    # STEP 5: Context Reconstruction
-    # ---------------------------------------------------------
-    def reconstruct_context(self, units: List[EvidenceUnit]) -> str:
-        ordered = sorted(units, key=lambda u: u.start_idx)
-        return " ".join(u.text for u in ordered)
-
-    # ---------------------------------------------------------
-    # FULL EP-EXIT PIPELINE
-    # ---------------------------------------------------------
-    def compress(self, query: str, document: str) -> str:
-
-        # Step 1: Sentence split
-        sentences = self.split_into_sentences(document)
-        if not sentences:
-            return ""
-
-        # Step 2: Build similarity graph
-        graph = self.build_similarity_graph(sentences)
-
-        # Step 3: Extract evidence units
-        units = self.extract_evidence_units(graph, sentences)
-
-        # Step 4: Apply EXIT classification
-        selected_units = self.filter_units(query, document, units)
-
-        # Step 5: Reconstruct final compressed context
-        return self.reconstruct_context(selected_units)
+    graph = self.build_similarity_graph(sentences)
+    units = self.extract_evidence_units(graph, sentences)
+    
+    all_units_info = []
+    kept_units_info = []
+    removed_units_info = []
+    sentences_kept_count = 0
+    
+    for unit in units:
+      score = self.classify_sentence(query, unit.text, document)
+      kept = score > self.threshold
+      
+      unit_info = {
+        "text": unit.text,
+        "sentences": unit.sentences,
+        "start_idx": unit.start_idx,
+        "end_idx": unit.end_idx,
+        "score": score
+      }
+      
+      all_units_info.append(unit_info)
+      
+      if kept:
+        kept_units_info.append(unit_info)
+        sentences_kept_count += len(unit.sentences)
+      else:
+        removed_units_info.append(unit_info)
+        
+    ordered_kept = sorted(kept_units_info, key=lambda u: u["start_idx"])
+    compressed_text = " ".join(u["text"] for u in ordered_kept)
+    
+    return {
+      "compressed_text": compressed_text,
+      "original_length": len(document),
+      "compressed_length": len(compressed_text),
+      "compression_ratio": len(compressed_text) / len(document) if len(document) > 0 else 0.0,
+      "sentences_kept": sentences_kept_count,
+      "sentences_total": len(sentences),
+      "evidence_units_total": len(units),
+      "evidence_units_kept_count": len(kept_units_info),
+      "evidence_units_removed_count": len(removed_units_info),
+      "all_units": all_units_info,
+      "kept_units": kept_units_info,
+      "removed_units": removed_units_info
+    }

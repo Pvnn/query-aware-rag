@@ -4,14 +4,14 @@ import spacy
 from typing import List, Union, Dict
 
 from src.compression.quitox_filter import QuitoxCoarseFilter
-from src.compression.exit_baseline import ExitBaselineCompressor
+from src.compression.ep_exit import EPExitCompressor 
 
 class HybridCompressor:
   """
   The Master Module: Adaptive Two-Stage Compression Pipeline.
   
   Flow:
-  Input Doc -> [Stage 3: QUITO-X Coarse Filter] -> Coarse Doc -> [Stage 4: EXIT Fine Filter] -> Final Doc
+  Input Doc -> [Stage 3: QUITO-X Coarse Filter] -> Coarse Doc -> [Stage 4: EP-EXIT Fine Filter] -> Final Doc
   """
   
   def __init__(
@@ -47,9 +47,9 @@ class HybridCompressor:
     print("--- [Stage 3] Loading QUITO-X ---")
     self.quitox = QuitoxCoarseFilter(model_name=quitox_model, device=self.device)
     
-    # 3. Initialize Stage 4: EXIT
-    print("--- [Stage 4] Loading EXIT ---")
-    self.exit = ExitBaselineCompressor(
+    # 3. Initialize Stage 4: EP-EXIT
+    print("--- [Stage 4] Loading EP-EXIT ---")
+    self.exit = EPExitCompressor(
       token=exit_token, 
       model_name=exit_model,
       threshold=0.5 # Default threshold
@@ -86,8 +86,8 @@ class HybridCompressor:
       sentences = context
       
     original_count = len(sentences)
-    
     current_sentences = sentences
+    
     quitox_time = 0.0
     exit_time = 0.0
     
@@ -103,48 +103,59 @@ class HybridCompressor:
     
     stage3_count = len(current_sentences)
     
-    # --- Stage 4: EXIT Fine Filter ---
+    # --- Stage 4: EP-EXIT Fine Filter ---
     if use_fine:
-      # Prepare context for EXIT
+      # Prepare context for EP-EXIT
       coarse_context_str = " ".join(current_sentences)
       
       # Update threshold
       self.exit.threshold = fine_threshold
       
       t2 = time.time()
-      # Run EXIT
+      # Run EP-EXIT and get the enriched stats payload
       exit_result = self.exit.compress_with_stats(query, coarse_context_str)
       exit_time = time.time() - t2
       
       final_text = exit_result["compressed_text"]
+      final_sentence_count = exit_result["sentences_kept"]
       
-      # Extract kept sentences list for reporting
-      if "sentence_scores" in exit_result:
-        final_sentences_list = [
-          item["sentence"] for item in exit_result["sentence_scores"] 
-          if item["kept"]
-        ]
-      else:
-        final_sentences_list = self._split_sentences(final_text)
+      # Extract our specific evidence unit tracking data
+      ep_exit_details = {
+        "evidence_units_total": exit_result.get("evidence_units_total", 0),
+        "evidence_units_kept_count": exit_result.get("evidence_units_kept_count", 0),
+        "evidence_units_removed_count": exit_result.get("evidence_units_removed_count", 0),
+        "kept_units": exit_result.get("kept_units", []),
+        "removed_units": exit_result.get("removed_units", [])
+      }
         
     else:
       # If Fine filter is skipped, the "final" output is just the coarse output
-      final_sentences_list = current_sentences
       final_text = " ".join(current_sentences)
+      final_sentence_count = len(current_sentences)
+      
+      # Provide empty tracking data to maintain consistent dictionary structure
+      ep_exit_details = {
+        "evidence_units_total": 0,
+        "evidence_units_kept_count": 0,
+        "evidence_units_removed_count": 0,
+        "kept_units": [],
+        "removed_units": []
+      }
 
     total_time = time.time() - start_time
     
-    # --- Reporting ---
+    # --- Final Reporting ---
     stats = {
       "final_text": final_text,
       "metrics": {
-        "original_count": original_count,
-        "stage3_count": stage3_count,
-        "final_count": len(final_sentences_list),
+        "original_sentence_count": original_count,
+        "coarse_sentence_count": stage3_count,
+        "final_sentence_count": final_sentence_count,
         "time_quitox": round(quitox_time, 2),
         "time_exit": round(exit_time, 2),
         "time_total": round(total_time, 2)
-      }
+      },
+      "ep_exit_details": ep_exit_details
     }
     
     return stats

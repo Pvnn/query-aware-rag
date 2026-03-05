@@ -42,6 +42,7 @@ class QueryAwareRAG:
     print(f"[2/3] Compressing documents...")
     start = time.time()
     compressed_docs = []
+    all_ep_exit_details = []
     original_tokens = 0
     compressed_tokens = 0
     
@@ -62,10 +63,18 @@ class QueryAwareRAG:
       compressed_text = result['final_text']
       compressed_docs.append(compressed_text)
       
-      # Stats logging
-      input_len = result['metrics']['original_count']
-      s3_len = result['metrics']['stage3_count']
-      final_len = result['metrics']['final_count']
+      # Store EP-EXIT details for this specific document
+      doc_ep_exit_details = result['ep_exit_details']
+      doc_ep_exit_details['doc_index'] = i + 1
+      all_ep_exit_details.append(doc_ep_exit_details)
+      
+      # Updated Stats logging
+      input_len = result['metrics']['original_sentence_count']
+      s3_len = result['metrics']['coarse_sentence_count']
+      final_len = result['metrics']['final_sentence_count']
+      
+      units_total = doc_ep_exit_details['evidence_units_total']
+      units_kept = doc_ep_exit_details['evidence_units_kept_count']
       
       # Rough token count (words * 1.3)
       orig_tok = len(original_text.split()) * 1.3
@@ -75,6 +84,8 @@ class QueryAwareRAG:
       compressed_tokens += comp_tok
       
       print(f"  Doc {i+1}: {input_len} sents -> {s3_len} (Coarse) -> {final_len} (Fine)")
+      if self.use_fine:
+        print(f"         EP-EXIT grouped into {units_total} units -> Kept {units_kept} units")
     
     context = " ".join(compressed_docs)
     compression_time = time.time() - start
@@ -104,6 +115,7 @@ class QueryAwareRAG:
       'answer': answer,
       'context': context,
       'retrieved_docs': retrieved_docs,
+      'ep_exit_details': all_ep_exit_details,
       'metrics': {
         'retrieval_time': retrieval_time,
         'compression_time': compression_time,
