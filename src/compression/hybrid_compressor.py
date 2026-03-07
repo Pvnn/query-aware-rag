@@ -94,6 +94,8 @@ class HybridCompressor:
     quitox_tokens = 0
     exit_tokens = 0
     
+    quitox_details = []
+
     # --- Stage 3: QUITO-X Coarse Filter ---
     if use_coarse:
       t1 = time.time()
@@ -104,6 +106,7 @@ class HybridCompressor:
       )
       current_sentences = quitox_result["filtered_sentences"]
       quitox_tokens = quitox_result["total_tokens_consumed"]
+      quitox_details = quitox_result.get("quitox_details", [])
       quitox_time = time.time() - t1
     
     stage3_count = len(current_sentences)
@@ -165,6 +168,7 @@ class HybridCompressor:
         "tokens_exit": exit_tokens,
         "tokens_total_compression": total_compression_tokens
       },
+      "quitox_details": quitox_details,
       "ep_exit_details": ep_exit_details
     }
     

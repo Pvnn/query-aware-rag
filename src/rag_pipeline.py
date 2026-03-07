@@ -49,7 +49,6 @@ class QueryAwareRAG:
     if compare_original:
       print("  [Parallel] Initiating uncompressed 'original_docs' generation in background...")
       executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-      # We pass the retrieval time as well to represent the full "uncompressed" pipeline path
       original_future = executor.submit(self._run_original_baseline, query, retrieved_docs)
 
     # Step 2: Compression
@@ -57,6 +56,7 @@ class QueryAwareRAG:
     start_comp = time.time()
     compressed_docs = []
     all_ep_exit_details = []
+    all_quitox_details = []
     
     original_char_len = 0
     compressed_char_len = 0
@@ -77,7 +77,10 @@ class QueryAwareRAG:
       
       compressed_text = result['final_text']
       compressed_docs.append(compressed_text)
+      
+      # Aggregate Details
       all_ep_exit_details.append({**result['ep_exit_details'], 'doc_index': i + 1})
+      all_quitox_details.append({'details': result['quitox_details'], 'doc_index': i + 1})
       
       total_quitox_tokens += result['metrics']['tokens_quitox']
       total_exit_tokens += result['metrics']['tokens_exit']
@@ -85,7 +88,9 @@ class QueryAwareRAG:
       original_char_len += len(original_text)
       compressed_char_len += len(compressed_text)
       
-      print(f"  Doc {i+1}: {result['metrics']['original_sentence_count']} sents -> {result['metrics']['final_sentence_count']} (Fine)")
+      # Informative logging for stages
+      m = result['metrics']
+      print(f"  Doc {i+1}: {m['original_sentence_count']} sents -> {m['coarse_sentence_count']} (Coarse) -> {m['final_sentence_count']} (Fine)")
     
     context = " ".join(compressed_docs)
     compression_time = time.time() - start_comp
@@ -99,7 +104,6 @@ class QueryAwareRAG:
     reader_result = self.reader.generate_answer(query, context)
     generation_time = time.time() - start_gen
     
-    # Total pipeline time (Retrieval + Compression + Generation)
     total_pipeline_time = retrieval_time + compression_time + generation_time
     
     # --- RESOLVE PARALLEL ORIGINAL_DOCS ---
@@ -114,10 +118,8 @@ class QueryAwareRAG:
       executor.shutdown()
       
       original_answer = orig_res["answer"]
-      # The full uncompressed path = Retrieval + Generation Duration
       original_total_time = retrieval_time + orig_res["duration"]
       
-      # Calculate savings
       if orig_res["usage"]["prompt_tokens"] > 0:
         token_savings = (1 - reader_result["usage"]["prompt_tokens"] / orig_res["usage"]["prompt_tokens"]) * 100
       
@@ -152,5 +154,6 @@ class QueryAwareRAG:
           'original_api_tokens': orig_res['usage']['total_tokens'] if compare_original else 0
         }
       },
-      'ep_exit_details': all_ep_exit_details
+      'ep_exit_details': all_ep_exit_details,
+      'quitox_details': all_quitox_details
     }
