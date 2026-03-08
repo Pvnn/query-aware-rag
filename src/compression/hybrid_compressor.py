@@ -91,14 +91,22 @@ class HybridCompressor:
     quitox_time = 0.0
     exit_time = 0.0
     
+    quitox_tokens = 0
+    exit_tokens = 0
+    
+    quitox_details = []
+
     # --- Stage 3: QUITO-X Coarse Filter ---
     if use_coarse:
       t1 = time.time()
-      current_sentences = self.quitox.compress(
+      quitox_result = self.quitox.compress(
         query=query, 
         sentences=current_sentences, 
         compression_ratio=coarse_ratio
       )
+      current_sentences = quitox_result["filtered_sentences"]
+      quitox_tokens = quitox_result["total_tokens_consumed"]
+      quitox_details = quitox_result.get("quitox_details", [])
       quitox_time = time.time() - t1
     
     stage3_count = len(current_sentences)
@@ -118,6 +126,7 @@ class HybridCompressor:
       
       final_text = exit_result["compressed_text"]
       final_sentence_count = exit_result["sentences_kept"]
+      exit_tokens = exit_result.get("total_tokens_consumed", 0)
       
       # Extract our specific evidence unit tracking data
       ep_exit_details = {
@@ -143,6 +152,7 @@ class HybridCompressor:
       }
 
     total_time = time.time() - start_time
+    total_compression_tokens = quitox_tokens + exit_tokens
     
     # --- Final Reporting ---
     stats = {
@@ -153,8 +163,12 @@ class HybridCompressor:
         "final_sentence_count": final_sentence_count,
         "time_quitox": round(quitox_time, 2),
         "time_exit": round(exit_time, 2),
-        "time_total": round(total_time, 2)
+        "time_total": round(total_time, 2),
+        "tokens_quitox": quitox_tokens,
+        "tokens_exit": exit_tokens,
+        "tokens_total_compression": total_compression_tokens
       },
+      "quitox_details": quitox_details,
       "ep_exit_details": ep_exit_details
     }
     
