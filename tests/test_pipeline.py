@@ -61,7 +61,7 @@ def test_pipeline():
         print(f"    {status} [{entry['score']:.4f}] {entry['text']}")
 
   # --- EP-EXIT FINE LOGS ---
-  if pipeline.use_fine:
+  if result.get('ep_exit_details'):
     print("\n🔍 EP-EXIT Stage (Fine Evidence Extraction):")
     for doc_details in result['ep_exit_details']:
       doc_idx = doc_details['doc_index']
