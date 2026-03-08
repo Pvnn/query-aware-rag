@@ -18,32 +18,32 @@ def load_demo_datasets(hotpot_path: str = "data/hotpotqa/dev") -> Dict[str, Any]
                 "Where was the JWST launched from and what is its destination?",
                 "How does JWST study exoplanets?"
             ],
-            "documents": JWST_DOCS
+            "global_documents": JWST_DOCS,
+            "query_documents": {} 
         },
         "hotpotqa": {
             "name": "HotpotQA (Dev Subset)",
             "queries": [],
-            "documents": []
+            "global_documents": [], # Not used for HotpotQA
+            "query_documents": {}   # Maps query -> specific documents
         }
     }
     
-    # Safely try to load a few samples from HotpotQA
     try:
         loader = HotpotQALoader(hotpot_path)
-        # Grab first 3 queries for demo purposes
-        for i in range(min(3, len(loader))):
+        print(f"Loading {len(loader)} HotpotQA samples into memory...")
+        
+        # Load ALL samples
+        for i in range(len(loader)):
             example = loader[i]
             datasets["hotpotqa"]["queries"].append(example.question)
             
-            # Add documents to the corpus pool (avoiding duplicates)
-            existing_titles = {d.get('id') for d in datasets["hotpotqa"]["documents"]}
-            for doc in example.documents:
-                if doc.title not in existing_titles:
-                    datasets["hotpotqa"]["documents"].append({
-                        "id": doc.title,
-                        "text": doc.text
-                    })
-                    existing_titles.add(doc.title)
+            # Map the specific documents to this exact query
+            datasets["hotpotqa"]["query_documents"][example.question] = [
+                {"id": doc.title, "text": doc.text} for doc in example.documents
+            ]
+            
+        print(f"✓ Loaded {len(datasets['hotpotqa']['queries'])} HotpotQA queries.")
     except Exception as e:
         print(f"Warning: Could not load HotpotQA dataset for demo: {e}")
 

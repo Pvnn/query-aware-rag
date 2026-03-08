@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -7,33 +8,49 @@ from dotenv import load_dotenv
 from src.rag_pipeline import QueryAwareRAG
 from src.data.demo_loader import load_demo_datasets
 
+# Load env variables
 load_dotenv()
 token = os.getenv("HF_TOKEN")
-
-app = FastAPI(title="Query-Aware RAG Compression API")
-
-# Enable CORS for the frontend UI
-app.add_middleware(
-  CORSMiddleware,
-  allow_origins=["*"], 
-  allow_credentials=True,
-  allow_methods=["*"],
-  allow_headers=["*"],
-)
 
 # Global variables to hold state
 pipeline = None
 demo_data = None
-current_dataset_id = None
+query_to_dataset = {}
+current_indexed_key = None
 
-@app.on_event("startup")
-def startup_event():
-  global pipeline, demo_data
-  # Initialize the heavy models once on startup
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+  """
+  Handles startup and shutdown events for the FastAPI application.
+  """
+  global pipeline, demo_data, query_to_dataset
+  print("Booting up heavy ML models... (This will take a moment)")
+  
   pipeline = QueryAwareRAG(token=token)
-  # Load available static queries and corpora
   demo_data = load_demo_datasets()
+  
+  # Build a fast O(1) lookup map for queries -> dataset
+  for ds_id, ds_info in demo_data.items():
+    for q in ds_info["queries"]:
+      query_to_dataset[q] = ds_id
+          
   print("✓ FastAPI Server Ready.")
+    
+  yield # Yield control back to FastAPI to start accepting requests
+
+# Initialize App with the new lifespan context
+app = FastAPI(
+  title="Query-Aware RAG Compression API",
+  lifespan=lifespan
+)
+
+app.add_middleware(
+  CORSMiddleware,
+  allow_origins=["*"],
+  allow_credentials=True,
+  allow_methods=["*"],
+  allow_headers=["*"],
+)
 
 
 class LoadDatasetRequest(BaseModel):
@@ -49,7 +66,6 @@ class QueryRequest(BaseModel):
 
 @app.get("/datasets")
 def get_datasets():
-  """Returns available datasets and their selectable queries."""
   if not demo_data:
     raise HTTPException(status_code=500, detail="Demo data not loaded.")
   
@@ -63,32 +79,53 @@ def get_datasets():
 
 @app.post("/dataset/load")
 def load_dataset(request: LoadDatasetRequest):
-  """Indexes the documents of the selected dataset into the Retriever."""
-  global current_dataset_id
+  """Legacy/Fallback manual loading. Mostly ignored by auto-indexing UI."""
+  global current_indexed_key
   
   if request.dataset_id not in demo_data:
     raise HTTPException(status_code=404, detail="Dataset not found")
       
-  if request.dataset_id == current_dataset_id:
-    return {"status": "success", "message": f"Dataset {request.dataset_id} is already loaded."}
+  docs = demo_data[request.dataset_id].get("global_documents", [])
+  if not docs:
+    return {"status": "skipped", "message": "This dataset uses query-specific auto-indexing."}
       
-  docs = demo_data[request.dataset_id]["documents"]
-  
-  # Feed documents to the DenseRetriever
+  index_key = f"global_{request.dataset_id}"
+  if current_indexed_key == index_key:
+    return {"status": "success", "message": "Already loaded."}
+      
   pipeline.retriever.index_documents(docs)
-  current_dataset_id = request.dataset_id
+  current_indexed_key = index_key
   
-  return {
-    "status": "success", 
-    "message": f"Indexed {len(docs)} documents for {request.dataset_id}"
-  }
+  return {"status": "success", "message": f"Indexed {len(docs)} documents."}
 
 @app.post("/query")
 def run_query(request: QueryRequest):
-  """Executes the end-to-end RAG pipeline."""
-  if not current_dataset_id:
-    raise HTTPException(status_code=400, detail="No dataset loaded. Call /dataset/load first.")
+  """Executes the pipeline with Auto-Indexing."""
+  global current_indexed_key
+  
+  # 1. Figure out which dataset this query belongs to
+  dataset_id = query_to_dataset.get(request.query)
+  if not dataset_id:
+    # Fallback to general JWST index if user typed a custom query
+    dataset_id = "jwst"
       
+  ds_info = demo_data[dataset_id]
+  
+  # 2. Determine which documents need to be in the index
+  if request.query in ds_info.get("query_documents", {}):
+    docs_to_index = ds_info["query_documents"][request.query]
+    index_key = f"query_{request.query}"
+  else:
+    docs_to_index = ds_info.get("global_documents", [])
+    index_key = f"global_{dataset_id}"
+      
+  # 3. AUTO-INDEXING: If the retriever doesn't have these docs, index them now
+  if current_indexed_key != index_key:
+    print(f"\n[Auto-Index] Swapping index for key: {index_key}...")
+    pipeline.retriever.index_documents(docs_to_index)
+    current_indexed_key = index_key
+
+  # 4. Run the Pipeline
   try:
     result = pipeline.run(
       query=request.query,
@@ -100,7 +137,8 @@ def run_query(request: QueryRequest):
     return result
   except Exception as e:
     raise HTTPException(status_code=500, detail=str(e))
-
+    
 if __name__ == "__main__":
   import uvicorn
+  # Run the server on localhost:8000
   uvicorn.run(app, host="0.0.0.0", port=8000)
