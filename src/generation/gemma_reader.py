@@ -43,7 +43,7 @@ class GemmaRAGReader:
       else:
         raise RuntimeError(f"GenAI API error during setup: {error_msg}")
 
-  def generate_answer(self, query, context, max_new_tokens=100):
+  def generate_answer(self, query, context, max_new_tokens=100, strict_mode=False):
     """
     Generate answer given query and context using the new google.genai SDK.
     
@@ -51,12 +51,27 @@ class GemmaRAGReader:
       query: Question string
       context: Context string (compressed documents)
       max_new_tokens: Maximum tokens to generate
+      strict_mode: If True, forces the model to output ONLY the exact entity (for benchmarking).
       
     Returns:
       Dictionary containing the generated answer and token usage statistics.
     """
-    # Strict prompt to enforce context-only answering
-    prompt = f"""You are a helpful assistant that answers questions ONLY using the provided context. Do not use any external knowledge.
+    if strict_mode:
+      prompt = f"""You are a strict extractive question-answering system.
+Extract the exact entity, name, or phrase from the context that answers the question.
+CRITICAL INSTRUCTIONS:
+- Output ONLY the exact answer.
+- Do NOT write full sentences.
+- Do NOT include conversational filler.
+- If the answer is multiple items, list them concisely (e.g., "Item 1 and Item 2").
+
+Context: {context}
+
+Question: {query}
+
+Exact Answer:"""
+    else:
+      prompt = f"""You are a helpful assistant that answers questions ONLY using the provided context. Do not use any external knowledge.
 
 Context: {context}
 
