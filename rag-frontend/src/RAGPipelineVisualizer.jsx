@@ -265,7 +265,7 @@ function FilterContent({ quitoxDetails }) {
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: C.violet }}>QUITO-X T5 Analysis</div>
-        <span style={{ fontSize: 13, color: C.inkMuted }}>— Binary Sentence Relevance Classification</span>
+        <span style={{ fontSize: 13, color: C.inkMuted }}>— Cross Attention Based Coarse Filter</span>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -277,7 +277,7 @@ function FilterContent({ quitoxDetails }) {
           return (
             <div key={i} style={{ padding: "14px", borderRadius: 6, background: C.paperAlt, border: `1px solid ${C.borderMed}` }}>
               <div style={{ fontSize: 12, color: C.ink, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 }}>
-                Document {q.doc_index} Triage
+                Document {q.doc_index}
                 <span style={{ color: C.inkMuted, fontWeight: 400, marginLeft: 8, textTransform: "none", letterSpacing: "normal" }}>
                   ({kept.length} Kept · {removed.length} Removed)
                 </span>
@@ -322,13 +322,13 @@ function CompressContent({ epExitDetails, ratio }) {
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: C.green }}>EP-EXIT Evidence Grouping</div>
-        <span style={{ fontSize: 13, color: C.inkMuted }}>— Gemma-2B Context Pruning &nbsp;·&nbsp; <strong style={{ color: C.green }}>{pct}% overall reduction</strong></span>
+        <span style={{ fontSize: 13, color: C.inkMuted }}>— Gemma-2B Binary Relevance Classification &nbsp;·&nbsp; <strong style={{ color: C.green }}>{pct}% overall reduction</strong></span>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {epExitDetails.map((doc, idx) => (
           <div key={idx} style={{ padding: "14px", border: `1px solid ${C.borderMed}`, borderRadius: 6, background: C.paperAlt }}>
-            <div style={{ fontSize: 12, color: C.ink, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 }}>Document {doc.doc_index} Triage</div>
+            <div style={{ fontSize: 12, color: C.ink, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 }}>Document {doc.doc_index}</div>
 
             {doc.kept_units?.length > 0 && (
               <div style={{ marginBottom: 12 }}>
@@ -528,7 +528,7 @@ function PipelineApp() {
             {/* Left: Clean Branding */}
             <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
               <div style={{ fontSize: 16, fontWeight: 600, color: C.ink, letterSpacing: "-0.01em" }}>Query-Aware RAG</div>
-              <div style={{ fontSize: 13, color: C.inkMuted, fontWeight: 400 }}>Research Visualizer</div>
+              <div style={{ fontSize: 13, color: C.inkMuted, fontWeight: 400 }}>Pipeline Visualizer</div>
             </div>
 
             {/* Right: Minimal Status Indicators */}
