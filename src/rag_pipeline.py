@@ -10,16 +10,13 @@ from src.compression.hybrid_compressor import HybridCompressor
 from src.generation.gemma_reader import GemmaRAGReader
 
 class QueryAwareRAG:
-  def __init__(self, token, use_coarse=True, use_fine=True):
+  def __init__(self, token):
     print("Initializing Query-Aware RAG Pipeline...")
     
     self.retriever = DenseRetriever()
     self.compressor = HybridCompressor(exit_token=token)
-    self.use_coarse = use_coarse
-    self.use_fine = use_fine
     self.reader = GemmaRAGReader()
     
-    print(f"Config: Coarse={self.use_coarse}, Fine={self.use_fine}")
     print("✓ Pipeline initialized\n")
   
   def _run_original_baseline(self, query, docs):
@@ -33,9 +30,12 @@ class QueryAwareRAG:
     result["duration"] = end_time - start_time
     return result
 
-  def run(self, query, top_k=5, compare_original=False):
+  def run(self, query, top_k=5, compare_original=False, use_coarse=True, use_fine=True):
     """Run end-to-end RAG pipeline."""
-    print(f"Query: {query}\n")
+    print(f"\n======================================")
+    print(f"Query: {query}")
+    print(f"Config: Coarse={use_coarse}, Fine={use_fine}")
+    print(f"======================================\n")
     
     # Step 1: Retrieval
     print(f"[1/3] Retrieving top-{top_k} documents...")
@@ -71,16 +71,16 @@ class QueryAwareRAG:
         context=original_text,
         coarse_ratio=0.7,
         fine_threshold=0.5,
-        use_coarse=self.use_coarse,
-        use_fine=self.use_fine
+        use_coarse=use_coarse,
+        use_fine=use_fine
       )
       
       compressed_text = result['final_text']
       compressed_docs.append(compressed_text)
       
       # Aggregate Details
-      all_ep_exit_details.append({**result['ep_exit_details'], 'doc_index': i + 1})
-      all_quitox_details.append({'details': result['quitox_details'], 'doc_index': i + 1})
+      all_ep_exit_details.append({**result.get('ep_exit_details', {}), 'doc_index': i + 1})
+      all_quitox_details.append({'details': result.get('quitox_details', {}), 'doc_index': i + 1})
       
       total_quitox_tokens += result['metrics']['tokens_quitox']
       total_exit_tokens += result['metrics']['tokens_exit']
@@ -101,7 +101,8 @@ class QueryAwareRAG:
     # Step 3: Generation (Compressed)
     print(f"[3/3] Generating answer (Compressed Context)...")
     start_gen = time.time()
-    reader_result = self.reader.generate_answer(query, context)
+    # We use strict_mode=False for the demo to give natural, conversational answers
+    reader_result = self.reader.generate_answer(query, context, strict_mode=False)
     generation_time = time.time() - start_gen
     
     total_pipeline_time = retrieval_time + compression_time + generation_time
@@ -127,7 +128,7 @@ class QueryAwareRAG:
       
       print(f"  ✓ Original Path Time: {original_total_time:.2f}s")
       print(f"  ✓ Compressed Path Time: {total_pipeline_time:.2f}s")
-      print(f"  ✓ Net Time Saved: {time_savings:.2f}s ({'FASTIER' if time_savings > 0 else 'SLOWER'})\n")
+      print(f"  ✓ Net Time Saved: {time_savings:.2f}s ({'FASTER' if time_savings > 0 else 'SLOWER'})\n")
 
     print(f"Answer: {reader_result['answer']}")
     
@@ -135,6 +136,7 @@ class QueryAwareRAG:
       'query': query,
       'answer': reader_result['answer'],
       'original_docs_answer': original_answer,
+      'retrieved_docs': [{"doc_index": i+1, "text": doc['text'], "score": float(score)} for i, (doc, score) in enumerate(retrieved_docs)],
       'metrics': {
         'times': {
           'retrieval': retrieval_time,
