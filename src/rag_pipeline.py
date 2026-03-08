@@ -6,6 +6,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.retrieval.retriever import DenseRetriever
+from src.retrieval.hybrid_retriever import HybridRetriever
 from src.compression.hybrid_compressor import HybridCompressor
 from src.generation.gemma_reader import GemmaRAGReader
 
@@ -13,7 +14,7 @@ class QueryAwareRAG:
   def __init__(self, token):
     print("Initializing Query-Aware RAG Pipeline...")
     
-    self.retriever = DenseRetriever()
+    self.retriever = HybridRetriever()
     self.compressor = HybridCompressor(exit_token=token)
     self.reader = GemmaRAGReader()
     
