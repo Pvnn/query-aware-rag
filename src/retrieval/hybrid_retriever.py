@@ -1,6 +1,7 @@
 from sentence_transformers import SentenceTransformer, util
 from rank_bm25 import BM25Okapi
 import torch
+import re
 
 class HybridRetriever:
     def __init__(self, model_name="facebook/contriever-msmarco"):
@@ -17,9 +18,26 @@ class HybridRetriever:
         self.embeddings = None
         self.bm25 = None  # 2. Placeholder for Sparse Retriever
 
+    STOP_WORDS = {
+        "a", "an", "and", "are", "as", "at", "be", "but", "by",
+        "for", "if", "in", "into", "is", "it", "no", "not", "of",
+        "on", "or", "such", "that", "the", "their", "then", "there",
+        "these", "they", "this", "to", "was", "will", "with", "what",
+        "how", "where", "who", "why", "which"
+    }
+
     def _tokenize(self, text):
-        """Simple tokenizer for BM25 (lowercases and splits by spaces)"""
-        return text.lower().split()
+        """
+        Improved tokenizer for BM25.
+        1. Lowercases text.
+        2. Removes punctuation (keeps only alphanumeric words).
+        3. Removes common stop words.
+        """
+        # Extract only alphanumeric words using regex
+        words = re.findall(r'\b\w+\b', text.lower())
+        
+        # Filter out stopwords
+        return [w for w in words if w not in self.STOP_WORDS]
 
     def index_documents(self, documents):
         """Index a corpus of documents for both Dense and Sparse retrieval."""
@@ -48,60 +66,45 @@ class HybridRetriever:
     def retrieve(self, query, top_k=5, rrf_k=60):
         """
         Retrieve using Reciprocal Rank Fusion (RRF).
-        rrf_k is a smoothing constant (60 is the industry standard).
+        Normalized so the top theoretical score equals 1.0 for the UI.
         """
         if self.embeddings is None or self.bm25 is None:
             raise ValueError("No documents indexed. Call index_documents() first.")
 
-        # ==========================================
-        # 1. DENSE RETRIEVAL (Semantic Context)
-        # ==========================================
         query_emb = self.encoder.encode(query, convert_to_tensor=True)
-        # Fetch more than top_k initially to ensure good fusion overlap
         dense_hits = util.semantic_search(query_emb, self.embeddings, top_k=top_k * 2)[0]
         
-        # Create a dictionary of {corpus_id: dense_rank}
-        dense_ranks = {hit['corpus_id']: rank for rank, hit in enumerate(dense_hits)}
+        # 1-indexed ranks (Rank 1 is best)
+        dense_ranks = {hit['corpus_id']: rank + 1 for rank, hit in enumerate(dense_hits)}
 
-        # ==========================================
-        # 2. SPARSE RETRIEVAL (Exact Keyword Match)
-        # ==========================================
         tokenized_query = self._tokenize(query)
         bm25_scores = self.bm25.get_scores(tokenized_query)
-        
-        # Get the top indices based on BM25 scores
         sparse_indices = bm25_scores.argsort()[-(top_k * 2):][::-1]
         
-        # Create a dictionary of {corpus_id: sparse_rank}
-        sparse_ranks = {idx: rank for rank, idx in enumerate(sparse_indices)}
+        # 1-indexed ranks (Rank 1 is best)
+        sparse_ranks = {idx: rank + 1 for rank, idx in enumerate(sparse_indices)}
 
-        # ==========================================
-        # 3. RECIPROCAL RANK FUSION (RRF)
-        # ==========================================
         rrf_scores = {}
-        # Get all unique document IDs retrieved by either method
         all_retrieved_ids = set(dense_ranks.keys()).union(set(sparse_ranks.keys()))
 
         for doc_id in all_retrieved_ids:
             score = 0.0
-            # Add dense RRF contribution (if it wasn't found, rank is effectively infinity)
             if doc_id in dense_ranks:
                 score += 1.0 / (rrf_k + dense_ranks[doc_id])
-            # Add sparse RRF contribution
             if doc_id in sparse_ranks:
                 score += 1.0 / (rrf_k + sparse_ranks[doc_id])
             
             rrf_scores[doc_id] = score
 
-        # ==========================================
-        # 4. SORT AND RETURN TOP-K
-        # ==========================================
-        # Sort documents by their combined RRF score descending
+        # The absolute maximum possible score (Rank 1 in both dense and sparse)
+        max_possible_rrf = 2.0 / (rrf_k + 1)
+        
         sorted_docs = sorted(rrf_scores.items(), key=lambda item: item[1], reverse=True)
         
-        results = [
-            (self.corpus[doc_id], rrf_score)
-            for doc_id, rrf_score in sorted_docs[:top_k]
-        ]
+        results = []
+        for doc_id, raw_score in sorted_docs[:top_k]:
+            # Normalize so the UI progress bars look correct (scale from 0 to 1)
+            normalized_score = raw_score / max_possible_rrf
+            results.append((self.corpus[doc_id], normalized_score))
 
         return results
