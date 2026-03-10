@@ -61,6 +61,9 @@ python-dotenv
 # Backend
 fastapi
 uvicorn
+
+tabulate
+hf_xet
 # Pre-download spacy model
 # Run after installing requirements:
 # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
