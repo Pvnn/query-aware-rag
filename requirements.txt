@@ -6,6 +6,7 @@ bitsandbytes>=0.41.0
 trl>=0.7.6
 datasets>=2.14.7
 # llm-lingua>=0.2.1
+llmlingua
 sentence-transformers>=2.2.2
 faiss-cpu>=1.7.4
 
