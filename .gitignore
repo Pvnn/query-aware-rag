@@ -187,6 +187,7 @@ Desktop.ini
 ################################
 docs/_build/
 site/
+src/eval_results/
 
 ################################
 # Secrets (never commit)
