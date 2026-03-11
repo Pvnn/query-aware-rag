@@ -1,98 +1,101 @@
-# Copyright (c) Facebook, Inc. and its affiliates.
-# All rights reserved.
-# This source code is licensed under the license found in the LICENSE file 
-# in the root directory of the DPR source tree.
-
-
-import collections
-import logging
-import regex
+import re
 import string
-import unicodedata
 from collections import Counter
 from typing import List
+import numpy as np
+import spacy
+from rouge_score import rouge_scorer
 
-logger = logging.getLogger(__name__)
-
-# =========================================================
-# 1. NORMALIZATION
-# =========================================================
+# 1. EXACT MATCH (EM) CORRECTNESS (LLMLingua / Soft EM)
 def normalize_answer(s: str) -> str:
-    """Lower text and remove punctuation, articles and extra whitespace."""
+    """Normalization from the SQuAD/LLMLingua evaluation script."""
     def remove_articles(text):
-        return regex.sub(r'\b(a|an|the)\b', ' ', text)
-
+        return re.sub(r"\b(a|an|the)\b", " ", text)
     def white_space_fix(text):
-        return ' '.join(text.split())
-
+        return " ".join(text.split())
     def remove_punc(text):
         exclude = set(string.punctuation)
-        return ''.join(ch for ch in text if ch not in exclude)
-
+        return "".join(ch for ch in text if ch not in exclude)
     def lower(text):
         return text.lower()
-
     return white_space_fix(remove_articles(remove_punc(lower(s))))
 
-def _normalize(text):
-    return unicodedata.normalize('NFD', text)
-
-# =========================================================
-# 2. ANSWER SURVIVAL (Facebook DPR)
-# =========================================================
-class SimpleTokenizer(object):
-    ALPHA_NUM = r'[\p{L}\p{N}\p{M}]+'
-    NON_WS = r'[^\p{Z}\p{C}]'
-
-    def __init__(self):
-        self._regexp = regex.compile(
-            '(%s)|(%s)' % (self.ALPHA_NUM, self.NON_WS),
-            flags=regex.IGNORECASE + regex.UNICODE + regex.MULTILINE
-        )
-
-    def tokenize(self, text, uncased=False):
-        matches = [m for m in self._regexp.finditer(text)]
-        if uncased:
-            tokens = [m.group().lower() for m in matches]
-        else:
-            tokens = [m.group() for m in matches]
-        return tokens
-
-def has_answer(answers: List[str], text: str, tokenizer: SimpleTokenizer) -> bool:
-    """Check if a document contains any of the answer strings."""
-    text = _normalize(text)
-    text = tokenizer.tokenize(text, uncased=True)
-
-    for answer in answers:
-        answer = _normalize(answer)
-        answer = tokenizer.tokenize(answer, uncased=True)
-        for i in range(0, len(text) - len(answer) + 1):
-            if answer == text[i: i + len(answer)]:
-                return True
-    return False
-
-# =========================================================
-# 3. EXTRACTIVE COMPRESSION METRICS
-# =========================================================
-def context_overlap_scores(compressed_text: str, gold_text: str) -> dict:
-    """
-    Evaluates how well the compressor isolated the gold supporting facts.
-    Returns Precision, Recall, and F1 at the token level.
-    """
-    comp_tokens = normalize_answer(compressed_text).split()
-    gold_tokens = normalize_answer(gold_text).split()
+def answer_em_correctness(output: str, short_answers: List[str]) -> float:
+    """Computes exact match correctness based on inclusion (Soft EM)."""
+    normalized_prediction = normalize_answer(output)
     
-    if not comp_tokens or not gold_tokens:
-        return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+    for candidate in short_answers:
+        normalized_ground_truth = normalize_answer(candidate)
+        if normalized_ground_truth in normalized_prediction:
+            return 1.0
+    return 0.0
 
-    common = Counter(comp_tokens) & Counter(gold_tokens)
+
+# 2. SQuAD TOKEN F1 (From LLMLingua)
+def token_f1_score(prediction: str, ground_truth: str) -> float:
+    """Computes Token F1 score as used in SQuAD and LLMLingua."""
+    pred_tokens = normalize_answer(prediction).split()
+    gt_tokens = normalize_answer(ground_truth).split()
+    
+    common = Counter(pred_tokens) & Counter(gt_tokens)
     num_same = sum(common.values())
     
     if num_same == 0:
-        return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+        return 0.0
         
-    precision = num_same / len(comp_tokens)
-    recall = num_same / len(gold_tokens)
+    precision = 1.0 * num_same / len(pred_tokens)
+    recall = 1.0 * num_same / len(gt_tokens)
     f1 = (2 * precision * recall) / (precision + recall)
     
-    return {"precision": precision, "recall": recall, "f1": f1}
+    return f1
+
+def answer_f1_correctness(output: str, short_answers: List[str]) -> float:
+    """Returns the maximum Token F1 score across all acceptable ground truths."""
+    scores = [token_f1_score(output, gt) for gt in short_answers]
+    return float(np.max(scores)) if scores else 0.0
+
+
+# 3. ROUGE CORRECTNESS
+def answer_rouge_correctness(output: str, gt_answers: List[str], rouge_type: str = "rougeL") -> float:
+    """Computes ROUGE score (default ROUGE-L) between generated output and ground truth."""
+    scorer = rouge_scorer.RougeScorer([rouge_type], use_stemmer=True)
+    scores = []
+    for gt in gt_answers:
+        score = scorer.score(gt, output)
+        scores.append(score[rouge_type].fmeasure)
+    return float(np.max(scores)) if scores else 0.0
+
+
+# 4. DISAMBIG-F1 CORRECTNESS (SPACY NER)
+class DisambigF1Evaluator:
+    """Estimates the Disambig-F1 using Spacy Named Entity Recognition (NER)."""
+    def __init__(self, model_name: str = "en_core_web_sm"):
+        print(f"Loading Spacy NER model ({model_name})...")
+        self.nlp = spacy.load(model_name)
+
+    def _ner(self, s: str) -> List[str]:
+        doc = self.nlp(s)
+        return [normalize_answer(e.text) for e in doc.ents]
+
+    def evaluate(self, answer: str, gt_answers: List[str]) -> float:
+        scores = []
+        for gt in gt_answers:
+            pred_ents = self._ner(answer)
+            ref_ents = self._ner(gt)
+
+            pred_counter = Counter(pred_ents)
+            ref_counter = Counter(ref_ents)
+
+            tp = sum((pred_counter & ref_counter).values())
+            fp = sum((pred_counter - ref_counter).values())
+            fn = sum((ref_counter - pred_counter).values())
+
+            precision = (tp / (tp + fp)) if (tp + fp) > 0 else 1.0
+            recall = (tp / (tp + fn)) if (tp + fn) > 0 else 1.0
+
+            if precision + recall == 0:
+                scores.append(0.0)
+            else:
+                scores.append(2 * (precision * recall) / (precision + recall))
+                
+        return float(np.max(scores)) if scores else 0.0
