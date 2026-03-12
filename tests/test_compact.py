@@ -1,6 +1,6 @@
 import unittest
 
-from src.compression.exit_baselines.compact import CompActCompressor
+from src.compression.baselines.compact import CompActCompressor
 from src.eval.interfaces import SearchResult
 
 

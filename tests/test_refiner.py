@@ -1,6 +1,6 @@
 import unittest
 
-from src.compression.exit_baselines.refiner import RefinerCompressor
+from src.compression.baselines.refiner import RefinerCompressor
 from src.eval.interfaces import SearchResult
 
 

@@ -1,6 +1,6 @@
 import unittest
 
-from src.compression.exit_baselines.longllmlingua import LongLLMLinguaCompressor
+from src.compression.baselines.longllmlingua import LongLLMLinguaCompressor
 from src.eval.interfaces import SearchResult
 
 

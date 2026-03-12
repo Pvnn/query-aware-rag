@@ -2,7 +2,6 @@
 RECOMP Abstractive Compressor
 
 Adapted from the EXIT repository:
-
 https://github.com/ThisIsHwang/EXIT
 
 Paper:
@@ -25,7 +24,7 @@ class RECOMPAbstractiveCompressor(BaseCompressor):
         self,
         model_name: str = "fangyuan/nq_abstractive_compressor",
         cache_dir: str = "./cache",
-        max_length: int = 8192,
+        max_length: int = 4096,
         device: str = None
     ):
 
@@ -43,7 +42,8 @@ class RECOMPAbstractiveCompressor(BaseCompressor):
 
         self.model = AutoModelForSeq2SeqLM.from_pretrained(
             model_name,
-            cache_dir=cache_dir
+            cache_dir=cache_dir,
+            dtype=torch.float16 
         ).to(self.device)
 
         self.model.eval()
@@ -68,7 +68,6 @@ class RECOMPAbstractiveCompressor(BaseCompressor):
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
         with torch.no_grad():
-
             summary_ids = self.model.generate(
                 inputs["input_ids"],
                 max_new_tokens=300,

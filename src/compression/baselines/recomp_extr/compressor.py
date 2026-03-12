@@ -18,7 +18,7 @@ from .contriever import Contriever
 
 class RecompExtractiveCompressor(BaseCompressor):
     """
-    RECOMP Extractive: selects most relevant sentences using dense retrieval.
+    RECOMP Extractive: selects most relevant passages using dense retrieval.
     """
 
     def __init__(
@@ -27,11 +27,11 @@ class RecompExtractiveCompressor(BaseCompressor):
         batch_size: int = 32,
         cache_dir: str = "./cache",
         device: str = None,
-        n_sentences: int = 2
+        top_k_docs: int = 2 
     ):
 
         self.batch_size = batch_size
-        self.n_sentences = n_sentences
+        self.top_k_docs = top_k_docs
 
         self.device = (
             torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -44,20 +44,18 @@ class RecompExtractiveCompressor(BaseCompressor):
             cache_dir=cache_dir
         )
 
-        # retriever model
         self.model = Contriever.from_pretrained(
             model_name,
-            cache_dir=cache_dir
+            cache_dir=cache_dir,
+            torch_dtype=torch.float16
         ).to(self.device)
 
         self.model.eval()
 
     def encode_texts(self, texts: List[str]) -> torch.Tensor:
-
         all_embeddings = []
 
         for i in range(0, len(texts), self.batch_size):
-
             batch_texts = texts[i:i + self.batch_size]
 
             inputs = self.tokenizer(
@@ -84,26 +82,24 @@ class RecompExtractiveCompressor(BaseCompressor):
             return []
 
         texts = [query] + [doc.text for doc in documents]
-
         embeddings = self.encode_texts(texts)
 
-        query_embedding = embeddings[0].unsqueeze(0)
-        doc_embeddings = embeddings[1:]
+        query_embedding = embeddings[0].unsqueeze(0)  # Shape: (1, D)
+        doc_embeddings = embeddings[1:]               # Shape: (N, D)
 
-        similarity = (query_embedding @ doc_embeddings.T).squeeze()
-
+        similarity = (query_embedding @ doc_embeddings.T).squeeze(0)
         scores = similarity.cpu()
 
-        k = min(self.n_sentences, len(documents))
-
+        k = min(self.top_k_docs, len(documents))
+        
         top_indices = torch.topk(scores, k).indices.tolist()
 
+        if not isinstance(top_indices, list):
+            top_indices = [top_indices]
+
         compressed_docs = []
-
         for idx in top_indices:
-
             doc = documents[idx]
-
             compressed_docs.append(
                 SearchResult(
                     evi_id=doc.evi_id,

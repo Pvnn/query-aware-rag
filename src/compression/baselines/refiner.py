@@ -12,11 +12,11 @@ from peft import PeftModel
 
 from src.eval.interfaces import BaseCompressor, SearchResult
 
-
 class RefinerCompressor(BaseCompressor):
 
     def __init__(
         self,
+        token, 
         base_model="meta-llama/Llama-2-7b-chat-hf",
         adapter="al1231/Refiner-7B",
         device="cuda",
@@ -29,7 +29,8 @@ class RefinerCompressor(BaseCompressor):
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             base_model,
-            cache_dir=cache_dir
+            cache_dir=cache_dir,
+            token=token  
         )
 
         self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -47,13 +48,15 @@ class RefinerCompressor(BaseCompressor):
             device_map="auto",
             quantization_config=bnb_config,
             trust_remote_code=True,
-            cache_dir=cache_dir
+            cache_dir=cache_dir,
+            token=token 
         )
 
         self.model = PeftModel.from_pretrained(
             self.base_model,
             adapter,
-            is_trainable=False
+            is_trainable=False,
+            token=token  
         )
 
         self.model.eval()
@@ -65,7 +68,6 @@ class RefinerCompressor(BaseCompressor):
         )
 
     def _truncate_context(self, context: str) -> str:
-
         tokens = self.tokenizer.encode(
             context,
             add_special_tokens=False
@@ -105,8 +107,7 @@ class RefinerCompressor(BaseCompressor):
             return_tensors="pt"
         ).to(self.device)
 
-        with torch.no_grad():
-
+        with torch.no_grad():            
             outputs = self.model.generate(
                 **inputs,
                 top_p=1,

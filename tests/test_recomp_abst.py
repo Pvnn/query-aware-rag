@@ -1,6 +1,6 @@
 import unittest
 
-from src.compression.exit_baselines.recomp_abst import RECOMPAbstractiveCompressor
+from src.compression.baselines.recomp_abst import RECOMPAbstractiveCompressor
 from src.eval.interfaces import SearchResult
 
 
