@@ -5,6 +5,8 @@ import torch
 import os
 import pandas as pd 
 import json
+import re
+import unicodedata
 from dotenv import load_dotenv
 
 project_root = Path(__file__).parent.parent
@@ -15,11 +17,9 @@ from tabulate import tabulate
 from src.eval.eval_pipeline import GenerativeEvaluator
 from src.generation.reader import RAGReader
 
-# --- Import Unified Adapters ---
 from src.eval.adapters import (
     NoOpCompressor, 
     ExitAdapter, 
-    QuitoAdapter, 
     HybridAdapter,
     RefinerAdapter, 
     RecompAdapter, 
@@ -30,7 +30,6 @@ from src.eval.adapters import (
 
 # --- Import Compressors ---
 from src.compression.hybrid_compressor import HybridCompressor
-from src.compression.quitox_filter import QuitoxCoarseFilter
 from src.compression.baselines import (
     EXITCompressor,
     RefinerCompressor,
@@ -40,32 +39,49 @@ from src.compression.baselines import (
     RecompExtractiveCompressor,
 )
 
+def normalize_text(text):
+    """Normalize text for strict NQ exact match evaluation."""
+    if not isinstance(text, str):
+        text = str(text)
+    # Replace non-ASCII with ?
+    text = re.sub(r'[^\x00-\x7F]', '?', text)
+    # Unicode normalize and lowercase
+    text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('utf-8').lower()
+    return text
 
-def load_hotpotqa(dataset_path=None, n=20):
-    """Loads PRE-PROCESSED HotpotQA dataset and formats it for the evaluator."""
+def load_nq(dataset_path=None, n=20):
+    """Loads PRE-PROCESSED NQ dataset and formats it. Handles multiple acceptable answers."""
     if not dataset_path or not Path(dataset_path).exists():
-        raise FileNotFoundError(f"Could not find HotpotQA dataset at {dataset_path}. Run preprocess_hotpotqa_retrieval.py first.")
+        raise FileNotFoundError(f"Could not find NQ dataset at {dataset_path}. Run preprocess_nq_retrieval.py first.")
         
-    print(f"Loading local pre-processed HotpotQA dataset from {dataset_path}...")
+    print(f"Loading local pre-processed NQ dataset from {dataset_path}...")
     with open(dataset_path, 'r', encoding='utf-8') as f:
+        # Load the unified JSON array
         dataset = json.load(f)
 
     formatted = []
     for i in range(min(n, len(dataset))):
         item = dataset[i]
         
-        # Extract the Top-10 passages saved by our preprocessor
+        question = item.get("question", "")
+        
+        # NQ has a list of acceptable answers. Extract and normalize them.
+        raw_answers = item.get("answer", item.get("answers", []))
+        if isinstance(raw_answers, str):
+            raw_answers = [raw_answers]
+            
+        normalized_answers = [normalize_text(ans) for ans in raw_answers]
+        main_answer = normalized_answers[0] if normalized_answers else ""
+        
+        # Read the unified 'docs' array created by our preprocessor
         contexts = []
         for doc in item.get("docs", []):
-            title = doc.get("title", "")
-            text = doc.get("text", "")
-            if text.strip():
-                # Format expected by GenerativeEvaluator: [title, [sentences]]
-                contexts.append([title, [text.strip()]])
+            contexts.append([doc.get("title", ""), [doc.get("text", "")]])
             
         formatted.append({
-            "question": item.get("question", ""),
-            "answer": item.get("answer", ""),
+            "question": question,
+            "answer": main_answer,
+            "acceptable_answers": normalized_answers, 
             "context": contexts
         })
         
@@ -73,11 +89,11 @@ def load_hotpotqa(dataset_path=None, n=20):
 
 
 def run(dataset_path=None):
-    print("\nLoading HotpotQA dataset...")
-    dataset = load_hotpotqa(dataset_path=dataset_path, n=20) 
+    print("\nLoading NQ dataset...")
+    dataset = load_nq(dataset_path=dataset_path, n=20) 
     print(f"Loaded {len(dataset)} samples\n")
 
-    output_dir = Path(project_root) / "eval_results" / "hotpot_qa"
+    output_dir = Path(project_root) / "eval_results" / "nq"
     output_dir.mkdir(exist_ok=True, parents=True)
     print(f"Results will be saved to: {output_dir}\n")
 
@@ -85,8 +101,8 @@ def run(dataset_path=None):
     token = os.getenv("HF_TOKEN")
     
     print("Initializing Reader LLM...")
-    # Using the smaller model to avoid VRAM crashes alongside 7B+ compressors
-    reader = RAGReader(model_name="qwen2.5:3b")
+    # Use smaller model to save VRAM
+    reader = RAGReader()
 
     results_table = []
 
@@ -104,7 +120,7 @@ def run(dataset_path=None):
 
     def run_and_save(name, adapter):
         print(f"\n[{name}] Running Benchmark...")
-        # Pass top_k=10 so the evaluator matches the preprocessed docs seamlessly
+        # Evaluator already has top_k=10
         eval_result = GenerativeEvaluator(compressor=adapter, reader=reader).evaluate(dataset, top_k=10)
         
         df = pd.DataFrame(eval_result["details"])
@@ -113,30 +129,30 @@ def run(dataset_path=None):
         print(f"✓ Saved query details to {csv_path.name}")
         
         return eval_result["aggregate"]
-    
+
     # --- 1. NoOp Baseline ---
     agg = run_and_save("NoOp", NoOpCompressor())
     results_table.append(format_metrics("NoOp", agg))
 
     # --- 2. EXIT Baseline ---
-    exit_model = EXITCompressor(
-        token=token,
-        base_model="doubleyyh/exit-gemma-2b",  
-        cache_dir=None 
-    )
-    agg = run_and_save("EXIT", ExitAdapter(exit_model))
-    results_table.append(format_metrics("EXIT", agg))
-    del exit_model
-    gc.collect()
-    torch.cuda.empty_cache()
-
-    # --- 3. RECOMP Extractive Baseline ---
-    # recomp_extr = RecompExtractiveCompressor()
-    # agg = run_and_save("RECOMP_EXTR", RecompExtractiveAdapter(recomp_extr))
-    # results_table.append(format_metrics("RECOMP_EXTR", agg))
-    # del recomp_extr
+    # exit_model = EXITCompressor(
+    #     token=token,
+    #     base_model="doubleyyh/exit-gemma-2b",  
+    #     cache_dir=None 
+    # )
+    # agg = run_and_save("EXIT", ExitAdapter(exit_model))
+    # results_table.append(format_metrics("EXIT", agg))
+    # del exit_model
     # gc.collect()
     # torch.cuda.empty_cache()
+
+    #--- 3. RECOMP Extractive Baseline ---
+    recomp_extr = RecompExtractiveCompressor()
+    agg = run_and_save("RECOMP_EXTR", RecompExtractiveAdapter(recomp_extr))
+    results_table.append(format_metrics("RECOMP_EXTR", agg))
+    del recomp_extr
+    gc.collect()
+    torch.cuda.empty_cache()
 
     # --- 4. LLMLingua2 Baseline ---
     # llmlingua2 = LLMLingua2Compressor()
@@ -154,7 +170,7 @@ def run(dataset_path=None):
     # gc.collect()
     # torch.cuda.empty_cache()
 
-    # --- 6. RECOMP Baseline ---
+    # --- 6. RECOMP Abstractive Baseline ---
     # recomp = RECOMPAbstractiveCompressor()
     # agg = run_and_save("RECOMP", RecompAdapter(recomp))
     # results_table.append(format_metrics("RECOMP", agg))
@@ -170,13 +186,13 @@ def run(dataset_path=None):
     # gc.collect()
     # torch.cuda.empty_cache()
 
-    # --- 8. Hybrid Pipeline ---
-    # hybrid = HybridCompressor(exit_token=token)
-    # agg = run_and_save("HYBRID", HybridAdapter(hybrid))
-    # results_table.append(format_metrics("HYBRID", agg))
-    # del hybrid
-    # gc.collect()
-    # torch.cuda.empty_cache()
+    #--- 8. Hybrid Pipeline ---
+    hybrid = HybridCompressor(exit_token=token)
+    agg = run_and_save("HYBRID", HybridAdapter(hybrid))
+    results_table.append(format_metrics("HYBRID", agg))
+    del hybrid
+    gc.collect()
+    torch.cuda.empty_cache()
 
     # --- Print & Save Final Results ---
     print("\n✅ Generative Benchmark Complete!\n")
@@ -185,8 +201,9 @@ def run(dataset_path=None):
     
     master_df = pd.DataFrame(results_table, columns=headers)
     master_df.to_csv(output_dir / "final_benchmark_results.csv", index=False)
-    print("\n✓ Master results saved to eval_results/hotpot_qa/final_benchmark_results.csv")
+    print("\n✓ Master results saved to eval_results/nq/final_benchmark_results.csv")
 
 if __name__ == "__main__":
-    local_hotpotqa_path = "data/hotpotqa/hotpotqa_top10_hybrid.json" 
-    run(dataset_path=local_hotpotqa_path)
+    # Point directly to the offline pre-computed file
+    local_nq_path = "data/nq/nq_top10_hybrid.json" 
+    run(dataset_path=local_nq_path)
