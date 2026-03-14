@@ -9,15 +9,25 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from datasets import load_dataset
 from src.retrieval.hybrid_retriever import HybridRetriever
 
 def preprocess_nq():
     input_file = "data/nq/dev.jsonl"
-    output_file = "data/nq/nq_top10_hybrid_500.json"
-    top_k = 10
+    top_k = 30
+    output_file = f"data/nq/nq_top{top_k}_hybrid_500.json"
 
     if not os.path.exists(input_file):
-        raise FileNotFoundError(f"Cannot find {input_file}. Please ensure your previous NQ download script has run.")
+        print(f"Cannot find {input_file}. Downloading NQ Open with pre-retrieved DPR contexts...")
+        os.makedirs("data/nq", exist_ok=True)
+        
+        # We use the xfact/nq-dpr dataset which includes the top 100 Wikipedia passages per question
+        nq_dev = load_dataset("xfact/nq-dpr", split="validation")
+        
+        # Export directly to JSONL format
+        print("Saving to JSONL...")
+        nq_dev.to_json(input_file)
+        print(f"✓ NQ Dev samples downloaded and saved: {len(nq_dev)}")
 
     print(f"Loading {input_file}...")
     dataset = []
@@ -31,7 +41,7 @@ def preprocess_nq():
     # Randomly sample exactly 500 queries using the standard seed
     print("Sampling 500 queries with seed 42...")
     random.seed(42)
-    # Ensure we don't try to sample more items than exist in the dataset
+
     sample_size = min(500, len(dataset))
     sampled_dataset = random.sample(dataset, sample_size)
 

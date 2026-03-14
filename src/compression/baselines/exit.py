@@ -28,7 +28,7 @@ class EXITCompressor(BaseCompressor):
         checkpoint: str = None,
         device: str = None,
         cache_dir: str = "./cache",
-        batch_size: int = 8,
+        batch_size: int = 2,
         threshold: float = 0.5
     ):
         self.batch_size = batch_size

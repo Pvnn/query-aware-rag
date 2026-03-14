@@ -14,8 +14,8 @@ from src.retrieval.hybrid_retriever import HybridRetriever
 
 def preprocess_2wiki():
     os.makedirs("data/2wiki", exist_ok=True)
-    output_file = "data/2wiki/2wiki_top10_hybrid_500.json"
-    top_k = 10
+    top_k = 30
+    output_file = f"data/2wiki/2wiki_top{top_k}_hybrid_500.json"
 
     # Using the stable, active mirror formatted identically to HotpotQA
     print("Downloading 2WikiMultihopQA from HuggingFace (framolfese mirror)...")

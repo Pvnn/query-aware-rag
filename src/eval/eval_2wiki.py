@@ -5,6 +5,7 @@ import torch
 import os
 import pandas as pd 
 import json
+import argparse
 from dotenv import load_dotenv
 
 project_root = Path(__file__).parent.parent
@@ -52,9 +53,9 @@ def load_2wiki(dataset_path, n=20):
         })
     return formatted
 
-def run(dataset_path):
-    print("\nLoading 2WikiMultihopQA dataset...")
-    dataset = load_2wiki(dataset_path) 
+def run(dataset_path, n):
+    print(f"\nLoading 2WikiMultihopQA dataset (n={n})...")
+    dataset = load_2wiki(dataset_path, n=n) 
     print(f"Loaded {len(dataset)} samples\n")
 
     output_dir = Path(project_root) / "eval_results" / "2wiki"
@@ -85,10 +86,10 @@ def run(dataset_path):
     results_table.append(format_metrics("NoOp", agg))
 
     # 2. EXIT Baseline
-    # exit_model = EXITCompressor(token=token, base_model="doubleyyh/exit-gemma-2b", cache_dir=None)
-    # agg = run_and_save("EXIT", ExitAdapter(exit_model))
-    # results_table.append(format_metrics("EXIT", agg))
-    # del exit_model; gc.collect(); torch.cuda.empty_cache()
+    exit_model = EXITCompressor(token=token, base_model="doubleyyh/exit-gemma-2b", cache_dir=None)
+    agg = run_and_save("EXIT", ExitAdapter(exit_model))
+    results_table.append(format_metrics("EXIT", agg))
+    del exit_model; gc.collect(); torch.cuda.empty_cache()
 
     #--- 3. RECOMP Extractive Baseline ---
     recomp_extr = RecompExtractiveCompressor()
@@ -99,12 +100,12 @@ def run(dataset_path):
     torch.cuda.empty_cache()
 
     # --- 4. LLMLingua2 Baseline ---
-    # llmlingua2 = LLMLingua2Compressor()
-    # agg = run_and_save("LLMLingua-2", LLMLingua2Adapter(llmlingua2))
-    # results_table.append(format_metrics("LLMLingua-2", agg))
-    # del llmlingua2
-    # gc.collect()
-    # torch.cuda.empty_cache()
+    llmlingua2 = LLMLingua2Compressor()
+    agg = run_and_save("LLMLingua-2", LLMLingua2Adapter(llmlingua2))
+    results_table.append(format_metrics("LLMLingua-2", agg))
+    del llmlingua2
+    gc.collect()
+    torch.cuda.empty_cache()
 
     # --- 5. CompAct Baseline ---
     # compact = CompactCompressor(token=token)
@@ -115,12 +116,12 @@ def run(dataset_path):
     # torch.cuda.empty_cache()
 
     # --- 6. RECOMP Abstractive Baseline ---
-    # recomp = RECOMPAbstractiveCompressor()
-    # agg = run_and_save("RECOMP", RecompAdapter(recomp))
-    # results_table.append(format_metrics("RECOMP", agg))
-    # del recomp
-    # gc.collect()
-    # torch.cuda.empty_cache()
+    recomp = RECOMPAbstractiveCompressor()
+    agg = run_and_save("RECOMP", RecompAdapter(recomp))
+    results_table.append(format_metrics("RECOMP", agg))
+    del recomp
+    gc.collect()
+    torch.cuda.empty_cache()
 
     # --- 7. REFINER Baseline ---
     # refiner = RefinerCompressor(token=token)
@@ -143,5 +144,16 @@ def run(dataset_path):
     print(tabulate(results_table, headers=headers, tablefmt="github"))
     pd.DataFrame(results_table, columns=headers).to_csv(output_dir / "final_benchmark_results.csv", index=False)
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run 2Wiki Generative Benchmark")
+    parser.add_argument(
+        "-n", "--num_samples", 
+        type=int, 
+        default=20,  # Failsafe default if -n is not passed
+        help="Number of samples to evaluate (e.g., -n 500)"
+    )
+    return parser.parse_args()
+
 if __name__ == "__main__":
-    run(dataset_path="data/2wiki/2wiki_top10_hybrid_500.json")
+    args = parse_args()
+    run(dataset_path="data/2wiki/2wiki_top30_hybrid_500.json", n=args.num_samples)

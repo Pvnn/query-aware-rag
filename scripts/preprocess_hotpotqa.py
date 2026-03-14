@@ -14,8 +14,8 @@ from src.retrieval.hybrid_retriever import HybridRetriever
 def preprocess_hotpotqa():
     os.makedirs("data/hotpotqa", exist_ok=True)
     # Update output file name to reflect the sampled size
-    output_file = "data/hotpotqa/hotpotqa_top10_hybrid_500.json"
-    top_k = 10
+    top_k = 30
+    output_file = f"data/hotpotqa/hotpotqa_top{top_k}_hybrid_500.json"
 
     print("Downloading HotpotQA (distractor) from HuggingFace...")
     hf_dataset = load_dataset("hotpot_qa", "distractor", split="validation")

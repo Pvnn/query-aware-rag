@@ -5,6 +5,7 @@ import torch
 import os
 import pandas as pd 
 import json
+import argparse
 from dotenv import load_dotenv
 
 project_root = Path(__file__).parent.parent
@@ -72,9 +73,9 @@ def load_hotpotqa(dataset_path=None, n=20):
     return formatted
 
 
-def run(dataset_path=None):
-    print("\nLoading HotpotQA dataset...")
-    dataset = load_hotpotqa(dataset_path=dataset_path, n=20) 
+def run(dataset_path, n):
+    print(f"\nLoading HotpotQA dataset (n={n})...")
+    dataset = load_hotpotqa(dataset_path, n=n) 
     print(f"Loaded {len(dataset)} samples\n")
 
     output_dir = Path(project_root) / "eval_results" / "hotpot_qa"
@@ -85,7 +86,6 @@ def run(dataset_path=None):
     token = os.getenv("HF_TOKEN")
     
     print("Initializing Reader LLM...")
-    # Using the smaller model to avoid VRAM crashes alongside 7B+ compressors
     reader = RAGReader(model_name="qwen2.5:3b")
 
     results_table = []
@@ -131,20 +131,20 @@ def run(dataset_path=None):
     torch.cuda.empty_cache()
 
     # --- 3. RECOMP Extractive Baseline ---
-    # recomp_extr = RecompExtractiveCompressor()
-    # agg = run_and_save("RECOMP_EXTR", RecompExtractiveAdapter(recomp_extr))
-    # results_table.append(format_metrics("RECOMP_EXTR", agg))
-    # del recomp_extr
-    # gc.collect()
-    # torch.cuda.empty_cache()
+    recomp_extr = RecompExtractiveCompressor()
+    agg = run_and_save("RECOMP_EXTR", RecompExtractiveAdapter(recomp_extr))
+    results_table.append(format_metrics("RECOMP_EXTR", agg))
+    del recomp_extr
+    gc.collect()
+    torch.cuda.empty_cache()
 
     # --- 4. LLMLingua2 Baseline ---
-    # llmlingua2 = LLMLingua2Compressor()
-    # agg = run_and_save("LLMLingua-2", LLMLingua2Adapter(llmlingua2))
-    # results_table.append(format_metrics("LLMLingua-2", agg))
-    # del llmlingua2
-    # gc.collect()
-    # torch.cuda.empty_cache()
+    llmlingua2 = LLMLingua2Compressor()
+    agg = run_and_save("LLMLingua-2", LLMLingua2Adapter(llmlingua2))
+    results_table.append(format_metrics("LLMLingua-2", agg))
+    del llmlingua2
+    gc.collect()
+    torch.cuda.empty_cache()
 
     # --- 5. CompAct Baseline ---
     # compact = CompactCompressor(token=token)
@@ -155,12 +155,12 @@ def run(dataset_path=None):
     # torch.cuda.empty_cache()
 
     # --- 6. RECOMP Baseline ---
-    # recomp = RECOMPAbstractiveCompressor()
-    # agg = run_and_save("RECOMP", RecompAdapter(recomp))
-    # results_table.append(format_metrics("RECOMP", agg))
-    # del recomp
-    # gc.collect()
-    # torch.cuda.empty_cache()
+    recomp = RECOMPAbstractiveCompressor()
+    agg = run_and_save("RECOMP", RecompAdapter(recomp))
+    results_table.append(format_metrics("RECOMP", agg))
+    del recomp
+    gc.collect()
+    torch.cuda.empty_cache()
 
     # --- 7. REFINER Baseline ---
     # refiner = RefinerCompressor(token=token)
@@ -171,12 +171,12 @@ def run(dataset_path=None):
     # torch.cuda.empty_cache()
 
     # --- 8. Hybrid Pipeline ---
-    # hybrid = HybridCompressor(exit_token=token)
-    # agg = run_and_save("HYBRID", HybridAdapter(hybrid))
-    # results_table.append(format_metrics("HYBRID", agg))
-    # del hybrid
-    # gc.collect()
-    # torch.cuda.empty_cache()
+    hybrid = HybridCompressor(exit_token=token)
+    agg = run_and_save("HYBRID", HybridAdapter(hybrid))
+    results_table.append(format_metrics("HYBRID", agg))
+    del hybrid
+    gc.collect()
+    torch.cuda.empty_cache()
 
     # --- Print & Save Final Results ---
     print("\n✅ Generative Benchmark Complete!\n")
@@ -187,6 +187,16 @@ def run(dataset_path=None):
     master_df.to_csv(output_dir / "final_benchmark_results.csv", index=False)
     print("\n✓ Master results saved to eval_results/hotpot_qa/final_benchmark_results.csv")
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run HotpotQA Generative Benchmark")
+    parser.add_argument(
+        "-n", "--num_samples", 
+        type=int, 
+        default=20,  # Failsafe default if -n is not passed
+        help="Number of samples to evaluate (e.g., -n 500)"
+    )
+    return parser.parse_args()
+
 if __name__ == "__main__":
-    local_hotpotqa_path = "data/hotpotqa/hotpotqa_top10_hybrid.json" 
-    run(dataset_path=local_hotpotqa_path)
+    args = parse_args()
+    run(dataset_path="data/hotpotqa/hotpotqa_top30_hybrid_500.json", n=args.num_samples)

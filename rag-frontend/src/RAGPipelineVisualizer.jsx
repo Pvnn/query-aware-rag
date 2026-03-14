@@ -43,7 +43,7 @@ async function runPipelineAPI(query, enableFilter, enableComp) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       query,
-      top_k: 4,
+      top_k: 10,
       compare_original: true,
       use_coarse: enableFilter,
       use_fine: enableComp

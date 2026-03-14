@@ -7,6 +7,7 @@ import pandas as pd
 import json
 import re
 import unicodedata
+import argparse
 from dotenv import load_dotenv
 
 project_root = Path(__file__).parent.parent
@@ -88,9 +89,9 @@ def load_nq(dataset_path=None, n=20):
     return formatted
 
 
-def run(dataset_path=None):
-    print("\nLoading NQ dataset...")
-    dataset = load_nq(dataset_path=dataset_path, n=20) 
+def run(dataset_path, n):
+    print(f"\nLoading NQ dataset (n={n})...")
+    dataset = load_nq(dataset_path, n=n) 
     print(f"Loaded {len(dataset)} samples\n")
 
     output_dir = Path(project_root) / "eval_results" / "nq"
@@ -101,8 +102,7 @@ def run(dataset_path=None):
     token = os.getenv("HF_TOKEN")
     
     print("Initializing Reader LLM...")
-    # Use smaller model to save VRAM
-    reader = RAGReader()
+    reader = RAGReader(model_name="qwen2.5:3b")
 
     results_table = []
 
@@ -135,16 +135,16 @@ def run(dataset_path=None):
     results_table.append(format_metrics("NoOp", agg))
 
     # --- 2. EXIT Baseline ---
-    # exit_model = EXITCompressor(
-    #     token=token,
-    #     base_model="doubleyyh/exit-gemma-2b",  
-    #     cache_dir=None 
-    # )
-    # agg = run_and_save("EXIT", ExitAdapter(exit_model))
-    # results_table.append(format_metrics("EXIT", agg))
-    # del exit_model
-    # gc.collect()
-    # torch.cuda.empty_cache()
+    exit_model = EXITCompressor(
+        token=token,
+        base_model="doubleyyh/exit-gemma-2b",  
+        cache_dir=None 
+    )
+    agg = run_and_save("EXIT", ExitAdapter(exit_model))
+    results_table.append(format_metrics("EXIT", agg))
+    del exit_model
+    gc.collect()
+    torch.cuda.empty_cache()
 
     #--- 3. RECOMP Extractive Baseline ---
     recomp_extr = RecompExtractiveCompressor()
@@ -155,12 +155,12 @@ def run(dataset_path=None):
     torch.cuda.empty_cache()
 
     # --- 4. LLMLingua2 Baseline ---
-    # llmlingua2 = LLMLingua2Compressor()
-    # agg = run_and_save("LLMLingua-2", LLMLingua2Adapter(llmlingua2))
-    # results_table.append(format_metrics("LLMLingua-2", agg))
-    # del llmlingua2
-    # gc.collect()
-    # torch.cuda.empty_cache()
+    llmlingua2 = LLMLingua2Compressor()
+    agg = run_and_save("LLMLingua-2", LLMLingua2Adapter(llmlingua2))
+    results_table.append(format_metrics("LLMLingua-2", agg))
+    del llmlingua2
+    gc.collect()
+    torch.cuda.empty_cache()
 
     # --- 5. CompAct Baseline ---
     # compact = CompactCompressor(token=token)
@@ -171,12 +171,12 @@ def run(dataset_path=None):
     # torch.cuda.empty_cache()
 
     # --- 6. RECOMP Abstractive Baseline ---
-    # recomp = RECOMPAbstractiveCompressor()
-    # agg = run_and_save("RECOMP", RecompAdapter(recomp))
-    # results_table.append(format_metrics("RECOMP", agg))
-    # del recomp
-    # gc.collect()
-    # torch.cuda.empty_cache()
+    recomp = RECOMPAbstractiveCompressor()
+    agg = run_and_save("RECOMP", RecompAdapter(recomp))
+    results_table.append(format_metrics("RECOMP", agg))
+    del recomp
+    gc.collect()
+    torch.cuda.empty_cache()
 
     # --- 7. REFINER Baseline ---
     # refiner = RefinerCompressor(token=token)
@@ -203,7 +203,16 @@ def run(dataset_path=None):
     master_df.to_csv(output_dir / "final_benchmark_results.csv", index=False)
     print("\n✓ Master results saved to eval_results/nq/final_benchmark_results.csv")
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run NQ Generative Benchmark")
+    parser.add_argument(
+        "-n", "--num_samples", 
+        type=int, 
+        default=20,  # Failsafe default if -n is not passed
+        help="Number of samples to evaluate (e.g., -n 500)"
+    )
+    return parser.parse_args()
+
 if __name__ == "__main__":
-    # Point directly to the offline pre-computed file
-    local_nq_path = "data/nq/nq_top10_hybrid.json" 
-    run(dataset_path=local_nq_path)
+    args = parse_args()
+    run(dataset_path="data/nq/nq_top30_hybrid_500.json", n=args.num_samples)

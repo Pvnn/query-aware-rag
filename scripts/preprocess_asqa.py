@@ -44,8 +44,8 @@ def download_alce_asqa():
 
 def preprocess_alce_asqa():
     input_file = download_alce_asqa()
-    output_file = "data/asqa/asqa_top10_hybrid_500.json"
-    top_k = 10
+    top_k = 30
+    output_file = f"data/asqa/asqa_top{top_k}_hybrid_500.json"
 
     print(f"Loading {input_file}...")
     with open(input_file, 'r', encoding='utf-8') as f:

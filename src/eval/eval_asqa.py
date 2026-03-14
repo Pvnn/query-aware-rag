@@ -5,6 +5,7 @@ import torch
 import os
 import pandas as pd 
 from dotenv import load_dotenv
+import argparse
 import json
 
 project_root = Path(__file__).parent.parent
@@ -85,9 +86,9 @@ def load_asqa(dataset_path=None, n=20):
     return formatted
 
 
-def run(dataset_path=None):
-    print("\nLoading ASQA dataset...")
-    dataset = load_asqa(dataset_path=dataset_path, n=20) 
+def run(dataset_path, n):
+    print(f"\nLoading ASQA dataset (n={n})...")
+    dataset = load_asqa(dataset_path, n=n) 
     print(f"Loaded {len(dataset)} samples\n")
 
     output_dir = Path(project_root) / "eval_results" / "asqa"
@@ -98,7 +99,7 @@ def run(dataset_path=None):
     token = os.getenv("HF_TOKEN")
     
     print("Initializing Reader LLM...")
-    reader = RAGReader()
+    reader = RAGReader(model_name="qwen2.5:3b")
 
     results_table = []
 
@@ -131,16 +132,16 @@ def run(dataset_path=None):
     results_table.append(format_metrics("NoOp", agg))
 
     # --- 2. EXIT Baseline  ---
-    # exit_model = EXITCompressor(
-    #     token=token,
-    #     base_model="doubleyyh/exit-gemma-2b",  
-    #     cache_dir=None 
-    # )
-    # agg = run_and_save("EXIT", ExitAdapter(exit_model))
-    # results_table.append(format_metrics("EXIT", agg))
-    # del exit_model
-    # gc.collect()
-    # torch.cuda.empty_cache()
+    exit_model = EXITCompressor(
+        token=token,
+        base_model="doubleyyh/exit-gemma-2b",  
+        cache_dir=None 
+    )
+    agg = run_and_save("EXIT", ExitAdapter(exit_model))
+    results_table.append(format_metrics("EXIT", agg))
+    del exit_model
+    gc.collect()
+    torch.cuda.empty_cache()
 
     # --- 3. RECOMP Extractive Baseline ---
     recomp_extr = RecompExtractiveCompressor()
@@ -159,12 +160,12 @@ def run(dataset_path=None):
     torch.cuda.empty_cache()
 
     # --- 5. CompAct Baseline ---
-    compact = CompactCompressor(token=token)
-    agg = run_and_save("COMPACT", CompActAdapter(compact))
-    results_table.append(format_metrics("COMPACT", agg))
-    del compact
-    gc.collect()
-    torch.cuda.empty_cache()
+    # compact = CompactCompressor(token=token)
+    # agg = run_and_save("COMPACT", CompActAdapter(compact))
+    # results_table.append(format_metrics("COMPACT", agg))
+    # del compact
+    # gc.collect()
+    # torch.cuda.empty_cache()
 
     # --- 6. RECOMP Baseline ---
     recomp = RECOMPAbstractiveCompressor()
@@ -200,7 +201,16 @@ def run(dataset_path=None):
     master_df.to_csv(output_dir / "final_benchmark_results.csv", index=False)
     print("\n✓ Master results saved to eval_results/asqa/final_benchmark_results.csv")
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run ASQA Generative Benchmark")
+    parser.add_argument(
+        "-n", "--num_samples", 
+        type=int, 
+        default=20,  # Failsafe default if -n is not passed
+        help="Number of samples to evaluate (e.g., -n 500)"
+    )
+    return parser.parse_args()
+
 if __name__ == "__main__":
-    # Point this strictly to your new pre-computed file!
-    local_asqa_path = "data/asqa/asqa_top10_hybrid.json" 
-    run(dataset_path=local_asqa_path)
+    args = parse_args()
+    run(dataset_path="data/asqa/asqa_top30_hybrid_500.json", n=args.num_samples)

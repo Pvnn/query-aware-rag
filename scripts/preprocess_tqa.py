@@ -22,8 +22,8 @@ def chunk_text(text, chunk_size=150):
 
 def preprocess_tqa():
     os.makedirs("data/tqa", exist_ok=True)
-    output_file = "data/tqa/tqa_top30_hybrid_500.json" 
     top_k = 30 
+    output_file = f"data/tqa/tqa_top{top_k}_hybrid_500.json" 
 
     print("Streaming TriviaQA (rc) directly from HuggingFace...")
     hf_dataset = load_dataset("trivia_qa", "rc", split="validation", streaming=True)
