@@ -70,7 +70,7 @@ class QueryAwareRAG:
       result = self.compressor.compress(
         query=query, 
         context=original_text,
-        coarse_ratio=0.7,
+        #coarse_ratio=0.7,
         fine_threshold=0.5,
         use_coarse=use_coarse,
         use_fine=use_fine

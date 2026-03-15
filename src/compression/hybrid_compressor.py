@@ -22,6 +22,7 @@ class HybridCompressor:
         quitox_model: str = "google/flan-t5-small",
         exit_model: str = "doubleyyh/exit-gemma-2b",
         device: str = None,
+        # batch_size: int = 2,  # <--- Added batch_size for local VRAM management
     ):
 
         if device is None:
@@ -51,6 +52,7 @@ class HybridCompressor:
             token=exit_token,
             model_name=exit_model,
             threshold=0.5,
+            #batch_size=batch_size, # <--- Pass batch_size to EP-EXIT
         )
 
         print("✅ Hybrid Pipeline Ready.\n")
@@ -63,17 +65,14 @@ class HybridCompressor:
         self,
         query: str,
         context: Union[str, List[str], List[SearchResult]],
-        coarse_ratio: float = 0.7,
-        fine_threshold: float = 0.5,
+        quitox_tolerance: float = 0.4,  
+        quitox_min_keep: int = 2,           
+        fine_threshold: float = 0.4,
         use_coarse: bool = True,
         use_fine: bool = True,
     ) -> Dict:
 
         start_time = time.time()
-
-        # -----------------------------
-        # INPUT NORMALIZATION
-        # -----------------------------
 
         if isinstance(context, str):
             sentences = self._split_sentences(context)
@@ -96,16 +95,15 @@ class HybridCompressor:
 
         quitox_details = []
 
-        # -----------------------------
-        # STAGE 3 — QUITO-X
-        # -----------------------------
         if use_coarse:
             t1 = time.time()
 
+            # <--- Update the call to use the new dynamic threshold arguments
             quitox_result = self.quitox.compress(
                 query=query,
                 sentences=current_sentences,
-                compression_ratio=coarse_ratio,
+                tolerance_ratio=quitox_tolerance,
+                min_keep=quitox_min_keep,
             )
 
             current_sentences = quitox_result["filtered_sentences"]
@@ -116,9 +114,6 @@ class HybridCompressor:
 
         stage3_count = len(current_sentences)
 
-        # -----------------------------
-        # STAGE 4 — EP-EXIT
-        # -----------------------------
         if use_fine:
 
             coarse_context_str = " ".join(current_sentences)
@@ -159,10 +154,6 @@ class HybridCompressor:
         total_time = time.time() - start_time
         total_compression_tokens = quitox_tokens + exit_tokens
 
-        # -----------------------------
-        # BUILD compressed_docs
-        # -----------------------------
-
         compressed_docs = [
             SearchResult(
                 evi_id=0,
@@ -171,10 +162,6 @@ class HybridCompressor:
                 text=final_text,
             )
         ]
-
-        # -----------------------------
-        # FINAL REPORT
-        # -----------------------------
 
         stats = {
             "final_text": final_text,

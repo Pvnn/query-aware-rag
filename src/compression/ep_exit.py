@@ -75,24 +75,25 @@ class EPExitCompressor:
             )
         return units
 
-    def compress(self, query, document):
+    def compress(self, query: str, document: str) -> str:
         sentences = self.decompose_sentences(document)
         if not sentences:
             return ""
-            
+
         graph = self.build_similarity_graph(sentences)
         units = self.extract_evidence_units(graph, sentences)
-        
+
+        # Batch classify all evidence units in one shot
+        unit_texts = [unit.text for unit in units]
+        queries = [query] * len(unit_texts)
+        yes_probs, _ = self.exit._predict_batch(queries, unit_texts, document)
+
         kept_indices = set()
-        
-        for unit in units:
-            score, _ = self.classify_sentence(query, unit.text, document)
+        for unit, score in zip(units, yes_probs):
             if score > self.threshold:
                 kept_indices.update(unit.indices)
-                
-        # Reconstruct exactly in original document order
-        ordered_sentences = [sentences[i] for i in sorted(kept_indices)]
-        return " ".join(ordered_sentences)
+
+        return " ".join(sentences[i] for i in sorted(kept_indices))
 
     def compress_with_stats(self, query, document):
         sentences = self.decompose_sentences(document)
@@ -116,51 +117,40 @@ class EPExitCompressor:
 
         graph = self.build_similarity_graph(sentences)
         units = self.extract_evidence_units(graph, sentences)
-        
-        all_units_info = []
-        kept_units_info = []
-        removed_units_info = []
-        
+
+        unit_texts = [unit.text for unit in units]
+        queries = [query] * len(unit_texts)
+        yes_probs, total_tokens = self.exit._predict_batch(queries, unit_texts, document)
+
         kept_indices = set()
-        total_tokens_consumed = 0
-        
-        for unit in units:
-            score, token_count = self.classify_sentence(query, unit.text, document)
-            total_tokens_consumed += token_count
+        all_units_info, kept_units_info, removed_units_info = [], [], []
+
+        for unit, score in zip(units, yes_probs):
             kept = score > self.threshold
-            
-            unit_info = {
-                "text": unit.text,
-                "sentences": unit.sentences,
-                "indices": unit.indices,
-                "start_idx": unit.start_idx,
-                "end_idx": unit.end_idx,
-                "score": score
+            info = {
+                "text": unit.text, "sentences": unit.sentences,
+                "indices": unit.indices, "start_idx": unit.start_idx,
+                "end_idx": unit.end_idx, "score": score
             }
-            
-            all_units_info.append(unit_info)
-            
+            all_units_info.append(info)
             if kept:
-                kept_units_info.append(unit_info)
+                kept_units_info.append(info)
                 kept_indices.update(unit.indices)
             else:
-                removed_units_info.append(unit_info)
-                
-        # Reconstruct exactly in original document order
-        ordered_sentences = [sentences[i] for i in sorted(kept_indices)]
-        compressed_text = " ".join(ordered_sentences)
-        
+                removed_units_info.append(info)
+
+        compressed_text = " ".join(sentences[i] for i in sorted(kept_indices))
         return {
             "compressed_text": compressed_text,
             "original_length": len(document),
             "compressed_length": len(compressed_text),
-            "compression_ratio": len(compressed_text) / len(document) if len(document) > 0 else 0.0,
+            "compression_ratio": len(compressed_text) / len(document) if document else 0.0,
             "sentences_kept": len(kept_indices),
             "sentences_total": len(sentences),
             "evidence_units_total": len(units),
             "evidence_units_kept_count": len(kept_units_info),
             "evidence_units_removed_count": len(removed_units_info),
-            "total_tokens_consumed": total_tokens_consumed,
+            "total_tokens_consumed": total_tokens,
             "all_units": all_units_info,
             "kept_units": kept_units_info,
             "removed_units": removed_units_info
