@@ -12,7 +12,7 @@ Hwang et al., 2024
 import torch
 import spacy
 from typing import List, Tuple
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel, PeftConfig
 from functools import lru_cache
 
@@ -38,7 +38,7 @@ class EXITCompressor(BaseCompressor):
         # Match official: auto device map, not manual device string
         self.device = device or "auto"
 
-        print(f"Initializing EXITCompressor with {base_model}...")
+        print(f"Initializing EXITCompressor with {base_model} in fp16...")
 
         # Tokenizer — identical to official
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -49,19 +49,11 @@ class EXITCompressor(BaseCompressor):
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.padding_side = "left"
 
-        # 4-bit quantization via BitsAndBytesConfig — avoids deprecation warning
-        # from passing load_in_4bit directly to from_pretrained
-        quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.float16
-        )
 
         self.base_model = AutoModelForCausalLM.from_pretrained(
             base_model,
             device_map=self.device,
-            quantization_config=quantization_config,
+            dtype=torch.float16,
             cache_dir=cache_dir,
             token=token
         )

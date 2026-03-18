@@ -12,7 +12,7 @@ EXIT: Extractive Context Compression for Retrieval-Augmented Generation
 import re
 import torch
 from typing import List, Dict
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
 from src.eval.interfaces import BaseCompressor, SearchResult
 
@@ -33,19 +33,11 @@ class CompactCompressor(BaseCompressor):
         self.device = device
         self.batch_size = batch_size
 
-        print(f"Initializing CompAct Compressor with {model_dir} in 4-bit...")
-
-        # FIX: Resolves load_in_4bit deprecation warning
-        quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.float16
-        )
+        print(f"Initializing CompAct Compressor with {model_dir} in fp16...")
 
         self.model = AutoModelForCausalLM.from_pretrained(
             model_dir,
-            quantization_config=quantization_config,
+            dtype=torch.float16,
             device_map="auto",
             cache_dir=cache_dir,
             token=token

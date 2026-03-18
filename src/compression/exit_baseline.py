@@ -1,4 +1,4 @@
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 import spacy
 from functools import lru_cache
@@ -27,17 +27,9 @@ class ExitBaselineCompressor:
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.padding_side = "left"
 
-        print("Loading model with 4-bit quantization...")
-        quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.float16,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4"
-        )
-
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            quantization_config=quantization_config,
+            dtype= torch.float16,
             device_map="auto",
             token=token
         )

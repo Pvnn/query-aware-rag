@@ -47,7 +47,7 @@ class RecompExtractiveCompressor(BaseCompressor):
         self.model = Contriever.from_pretrained(
             model_name,
             cache_dir=cache_dir,
-            torch_dtype=torch.float16
+            dtype=torch.float16
         ).to(self.device)
 
         self.model.eval()

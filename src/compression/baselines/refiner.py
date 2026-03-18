@@ -7,7 +7,7 @@ https://github.com/ThisIsHwang/EXIT
 
 import torch
 from typing import List
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
 
 from src.eval.interfaces import BaseCompressor, SearchResult
@@ -36,17 +36,10 @@ class RefinerCompressor(BaseCompressor):
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.padding_side = "left"
 
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.float16
-        )
-
         self.base_model = AutoModelForCausalLM.from_pretrained(
             base_model,
+            dtype=torch.float16,
             device_map="auto",
-            quantization_config=bnb_config,
             trust_remote_code=True,
             cache_dir=cache_dir,
             token=token 
