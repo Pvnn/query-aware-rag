@@ -10,6 +10,7 @@ Hwang et al., 2024
 """
 
 import torch
+import spacy
 from typing import List, Tuple
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from peft import PeftModel, PeftConfig
@@ -85,6 +86,13 @@ class EXITCompressor(BaseCompressor):
         self.no_token_id = self.tokenizer.encode("No", add_special_tokens=False)[0]
 
         torch.cuda.empty_cache()
+
+        self.nlp = spacy.load(
+            "en_core_web_sm",
+            disable=["tok2vec", "tagger", "parser", "attribute_ruler", "lemmatizer", "ner"]
+        )
+        self.nlp.enable_pipe("senter")
+
         print(f"✓ EXITCompressor ready on {self.device}")
 
     @lru_cache(maxsize=1024)
@@ -152,45 +160,34 @@ class EXITCompressor(BaseCompressor):
     ) -> List[SearchResult]:
         """
         Compress documents using context-aware extraction.
-        Logic identical to official: one document at a time, context is the
-        full concatenation of all documents. Batching here would cause OOM
-        because each item in the batch carries a full copy of the context.
         """
-        # Full context — identical to official
         context = "\n".join(
-            f"{doc.title}\n{doc.text}"
+            f"{doc.title}\n{doc.text}" if doc.title else doc.text
             for doc in documents
         )
 
-        selected_texts = []
-        current_doc_id = None
-        current_texts = []
+        all_sentences = [
+            sent.text.strip()
+            for sent in self.nlp(context).sents
+            if sent.text.strip()
+        ]
 
-        for doc in documents:
-            if current_doc_id != doc.evi_id:
-                if current_texts:
-                    doc_text = " ".join(current_texts)
-                    if doc_text.strip():
-                        selected_texts.append(doc_text)
-                current_doc_id = doc.evi_id
-                current_texts = []
+        if not all_sentences:
+            return [SearchResult(evi_id=0, docid=0, title="", text="", score=1.0)]
+        selected_sentences = []
 
-            predictions, probs = self._predict_batch(
-                [query],
-                [context],
-                [doc.text]
-            )
+        for i in range(0, len(all_sentences), self.batch_size):
+            batch = all_sentences[i : i + self.batch_size]
+            queries = [query] * len(batch)
+            contexts = [context] * len(batch)
 
-            # Use probs[0, 0] — the "Yes" probability — identical to official
-            if probs[0, 0].item() >= self.threshold:
-                current_texts.append(doc.text)
+            _, probs = self._predict_batch(queries, contexts, batch)
 
-        if current_texts:
-            doc_text = " ".join(current_texts)
-            if doc_text.strip():
-                selected_texts.append(doc_text)
+            for sent, yes_prob in zip(batch, probs[:, 0].tolist()):
+                if yes_prob >= self.threshold:
+                    selected_sentences.append(sent)
 
-        compressed_text = "\n\n".join(selected_texts)
+        compressed_text = " ".join(selected_sentences)
 
         return [SearchResult(
             evi_id=0,

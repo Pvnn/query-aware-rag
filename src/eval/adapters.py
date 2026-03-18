@@ -2,6 +2,7 @@
 Adapters for wrapping various compression baselines into a unified interface
 for the GenerativeEvaluator.
 """
+from typing import List
 from src.eval.interfaces import SearchResult
 
 class NoOpCompressor:
@@ -11,17 +12,14 @@ class NoOpCompressor:
 class ExitAdapter:
     def __init__(self, compressor):
         self.compressor = compressor
-    def compress(self, query, docs):
-        compressed_docs = []
-        for doc in docs:
-            # Check if compressor returns a dict or directly SearchResults (like the official one)
-            result = self.compressor.compress(query, [doc] if not isinstance(docs, list) else docs)
-            if isinstance(result, list) and len(result) > 0 and isinstance(result[0], SearchResult):
-                return {"compressed_docs": result}
-            
-            text = result.get("compressed_text", result.get("final_text", "")) if isinstance(result, dict) else result
-            compressed_docs.append(SearchResult(evi_id=doc.evi_id, docid=doc.docid, title=doc.title, text=text))
-        return {"compressed_docs": compressed_docs}
+ 
+    def compress(self, query: str, docs: List[SearchResult]) -> dict:
+        # Pass all docs at once — the compressor concatenates them internally,
+        # splits into sentences across the full corpus, then batch-classifies.
+        # Never call this in a per-doc loop: that destroys cross-doc batching
+        # and reverts to the slow serial behavior we fixed.
+        result = self.compressor.compress(query, docs)
+        return {"compressed_docs": result}
 
 class QuitoAdapter:
     def __init__(self, compressor):
