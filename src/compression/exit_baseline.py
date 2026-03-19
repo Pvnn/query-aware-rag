@@ -9,6 +9,7 @@ class ExitBaselineCompressor:
         self,
         token,
         model_name="doubleyyh/exit-gemma-2b",
+        cache_dir: str = "./cache",
         threshold=0.5,
         batch_size=8
     ):
@@ -31,6 +32,7 @@ class ExitBaselineCompressor:
             model_name,
             dtype= torch.float16,
             device_map="auto",
+            cache_dir=cache_dir,
             token=token
         )
         self.model.eval()
