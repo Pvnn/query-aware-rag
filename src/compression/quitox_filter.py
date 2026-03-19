@@ -140,6 +140,7 @@ class QuitoxCoarseFilter:
 
         return {
             "filtered_sentences": filtered_sentences,
+            "kept_indices": sorted(indices_to_keep),  
             "total_tokens_consumed": total_tokens,
             "quitox_details": quitox_details
         }

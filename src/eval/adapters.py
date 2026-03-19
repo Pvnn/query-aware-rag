@@ -14,10 +14,6 @@ class ExitAdapter:
         self.compressor = compressor
  
     def compress(self, query: str, docs: List[SearchResult]) -> dict:
-        # Pass all docs at once — the compressor concatenates them internally,
-        # splits into sentences across the full corpus, then batch-classifies.
-        # Never call this in a per-doc loop: that destroys cross-doc batching
-        # and reverts to the slow serial behavior we fixed.
         result = self.compressor.compress(query, docs)
         return {"compressed_docs": result}
 
@@ -36,12 +32,15 @@ class QuitoAdapter:
 class HybridAdapter:
     def __init__(self, compressor):
         self.compressor = compressor
-    def compress(self, query, docs):
-        compressed_docs = []
-        for doc in docs:
-            result = self.compressor.compress(query=query, context=doc.text, use_coarse=True, use_fine=True)
-            compressed_docs.append(SearchResult(evi_id=doc.evi_id, docid=doc.docid, title=doc.title, text=result['final_text']))
-        return {"compressed_docs": compressed_docs}
+
+    def compress(self, query: str, docs: List[SearchResult]) -> dict:
+        result = self.compressor.compress(
+            query=query,
+            context=docs,      
+            use_coarse=True,
+            use_fine=True
+        )
+        return {"compressed_docs": result["compressed_docs"]}
 
 class RefinerAdapter:
     def __init__(self, compressor):

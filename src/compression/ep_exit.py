@@ -85,13 +85,17 @@ class EPExitCompressor:
 
         # Batch classify all evidence units in one shot
         unit_texts = [unit.text for unit in units]
-        queries = [query] * len(unit_texts)
-        yes_probs, _ = self.exit._predict_batch(queries, unit_texts, document)
+        queries_list = [query] * len(unit_texts)
 
         kept_indices = set()
-        for unit, score in zip(units, yes_probs):
-            if score > self.threshold:
-                kept_indices.update(unit.indices)
+        for i in range(0, len(unit_texts), self.exit.batch_size):
+            batch_texts   = unit_texts[i : i + self.exit.batch_size]
+            batch_queries = queries_list[i : i + self.exit.batch_size]
+            batch_units   = units[i : i + self.exit.batch_size]
+            yes_probs, _  = self.exit._predict_batch(batch_queries, batch_texts, document)
+            for unit, score in zip(batch_units, yes_probs):
+                if score > self.threshold:
+                    kept_indices.update(unit.indices)
 
         return " ".join(sentences[i] for i in sorted(kept_indices))
 
@@ -118,26 +122,36 @@ class EPExitCompressor:
         graph = self.build_similarity_graph(sentences)
         units = self.extract_evidence_units(graph, sentences)
 
-        unit_texts = [unit.text for unit in units]
-        queries = [query] * len(unit_texts)
-        yes_probs, total_tokens = self.exit._predict_batch(queries, unit_texts, document)
+        unit_texts   = [unit.text for unit in units]
+        queries_list = [query] * len(unit_texts)
 
         kept_indices = set()
         all_units_info, kept_units_info, removed_units_info = [], [], []
+        total_tokens = 0
 
-        for unit, score in zip(units, yes_probs):
-            kept = score > self.threshold
-            info = {
-                "text": unit.text, "sentences": unit.sentences,
-                "indices": unit.indices, "start_idx": unit.start_idx,
-                "end_idx": unit.end_idx, "score": score
-            }
-            all_units_info.append(info)
-            if kept:
-                kept_units_info.append(info)
-                kept_indices.update(unit.indices)
-            else:
-                removed_units_info.append(info)
+        for i in range(0, len(unit_texts), self.exit.batch_size):
+            batch_texts   = unit_texts[i : i + self.exit.batch_size]
+            batch_queries = queries_list[i : i + self.exit.batch_size]
+            batch_units   = units[i : i + self.exit.batch_size]
+
+            yes_probs, batch_tokens = self.exit._predict_batch(
+                batch_queries, batch_texts, document
+            )
+            total_tokens += batch_tokens
+
+            for unit, score in zip(batch_units, yes_probs):
+                kept = score > self.threshold
+                info = {
+                    "text": unit.text, "sentences": unit.sentences,
+                    "indices": unit.indices, "start_idx": unit.start_idx,
+                    "end_idx": unit.end_idx, "score": score
+                }
+                all_units_info.append(info)
+                if kept:
+                    kept_units_info.append(info)
+                    kept_indices.update(unit.indices)
+                else:
+                    removed_units_info.append(info)
 
         compressed_text = " ".join(sentences[i] for i in sorted(kept_indices))
         return {
