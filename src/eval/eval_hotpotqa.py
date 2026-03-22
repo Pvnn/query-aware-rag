@@ -121,8 +121,7 @@ def run(dataset_path, n):
     # --- 2. EXIT Baseline ---
     exit_model = EXITCompressor(
         token=token,
-        base_model="doubleyyh/exit-gemma-2b",  
-        cache_dir=None 
+        base_model="doubleyyh/exit-gemma-2b"
     )
     agg = run_and_save("EXIT", ExitAdapter(exit_model))
     results_table.append(format_metrics("EXIT", agg))
@@ -155,12 +154,12 @@ def run(dataset_path, n):
     # torch.cuda.empty_cache()
 
     # --- 6. RECOMP Baseline ---
-    recomp = RECOMPAbstractiveCompressor()
-    agg = run_and_save("RECOMP", RecompAdapter(recomp))
-    results_table.append(format_metrics("RECOMP", agg))
-    del recomp
-    gc.collect()
-    torch.cuda.empty_cache()
+    # recomp = RECOMPAbstractiveCompressor()
+    # agg = run_and_save("RECOMP", RecompAdapter(recomp))
+    # results_table.append(format_metrics("RECOMP", agg))
+    # del recomp
+    # gc.collect()
+    # torch.cuda.empty_cache()
 
     # --- 7. REFINER Baseline ---
     # refiner = RefinerCompressor(token=token)

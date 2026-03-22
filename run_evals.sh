@@ -18,7 +18,7 @@ echo "Date: $(date)" >> "$MASTER_LOG"
 echo "======================================================" >> "$MASTER_LOG"
 
 # Exact order of datasets
-DATASETS=("2wiki" "tqa" "hotpotqa" "asqa" "nq")
+DATASETS=("2wiki" "tqa" "hotpotqa" "nq")
 TOTAL_DATASETS=${#DATASETS[@]}
 
 for i in "${!DATASETS[@]}"; do
