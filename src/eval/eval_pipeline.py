@@ -1,6 +1,8 @@
 import time
 from typing import List, Dict
 from tqdm import tqdm
+import torch
+import gc
 
 from src.eval.interfaces import SearchResult
 from src.eval.metrics import (
@@ -108,6 +110,10 @@ class GenerativeEvaluator:
                 row_data[f"Comp Doc {doc_idx+1}"] = compressed_docs[doc_idx].text if doc_idx < len(compressed_docs) else ""
 
             detailed_traces.append(row_data)
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
 
         # Average out the metrics
         n = metrics["total_queries"]
