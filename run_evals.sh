@@ -52,3 +52,5 @@ done
 
 echo -e "\n======================================================" | tee -a "$MASTER_LOG"
 echo "All evaluations in the pipeline have finished." | tee -a "$MASTER_LOG"
+
+# ./run_eval.sh 5

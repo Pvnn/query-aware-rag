@@ -157,3 +157,5 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     run(dataset_path="data/2wiki/2wiki_top30_hybrid_500.json", n=args.num_samples)
+
+# python -m src.eval.eval_2wiki -n 5
