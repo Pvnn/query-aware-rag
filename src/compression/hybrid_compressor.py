@@ -66,7 +66,7 @@ class HybridCompressor:
         self,
         query: str,
         context: Union[str, List[str], List[SearchResult]],
-        quitox_tolerance: float = 0.4,
+        coarse_ratio: float = 0.7,
         quitox_min_keep: int = 2,
         fine_threshold: float = 0.4,
         use_coarse: bool = True,
@@ -115,7 +115,7 @@ class HybridCompressor:
             quitox_result = self.quitox.compress(
                 query=query,
                 sentences=current_sentences,
-                tolerance_ratio=quitox_tolerance,
+                compression_ratio=coarse_ratio, 
                 min_keep=quitox_min_keep,
             )
 

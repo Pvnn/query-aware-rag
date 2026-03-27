@@ -82,65 +82,38 @@ class QuitoxCoarseFilter:
 
         return sent_scores, total_tokens_consumed
 
-    def compress(self, query: str, sentences: List[str], tolerance_ratio: float = 0.6, min_keep: int = 2) -> dict:
-        """
-        Compresses sentences dynamically using Min-Max Normalized Attention Scores.
-        Removes the hard ceiling so ALL highly relevant sentences are kept.
-        """
+    def compress(self, query: str, sentences: List[str], compression_ratio: float = 0.6, min_keep: int = 2) -> dict:
         if not sentences:
-            return {"filtered_sentences": [], "total_tokens_consumed": 0, "quitox_details": []}
+            return {"filtered_sentences": [], "kept_indices": [], "total_tokens_consumed": 0, "quitox_details": []}
 
-        # 1. Get raw softmax scores
         raw_scores, total_tokens = self._get_sentence_scores(query, sentences)
-        
-        # 2. Apply Min-Max Normalization to stretch scores between 0.0 and 1.0
-        if len(raw_scores) > 1:
-            min_score = min(raw_scores)
-            max_score = max(raw_scores)
-            if max_score > min_score:
-                normalized_scores = [(s - min_score) / (max_score - min_score) for s in raw_scores]
-            else:
-                normalized_scores = [1.0 for _ in raw_scores]
-        else:
-            normalized_scores = [1.0 for _ in raw_scores]
+        scored_sentences = [{"text": s, "score": score} for s, score in zip(sentences, raw_scores)]
 
-        # 3. Pair sentences with their new normalized scores
-        scored_sentences = [
-            {"text": s, "raw_score": raw, "norm_score": norm} 
-            for s, raw, norm in zip(sentences, raw_scores, normalized_scores)
-        ]
-
-        # 4. Filter logic (No more hard ceiling!)
-        keep_threshold = tolerance_ratio 
+        # Top-K ratio threshold — same as old impl
+        sorted_scores = sorted([s['score'] for s in scored_sentences], reverse=True)
+        num_keep = max(min_keep, int(len(sentences) * compression_ratio))  # ← min_keep folded in here
+        threshold_idx = min(num_keep - 1, len(sorted_scores) - 1)
+        keep_threshold = sorted_scores[threshold_idx] if sorted_scores else 0.0
 
         filtered_sentences = []
+        indices_to_keep = []
         quitox_details = []
-        
-        # Sort by score purely to enforce the minimum keep guarantee
-        sorted_indices = sorted(range(len(scored_sentences)), key=lambda i: scored_sentences[i]['norm_score'], reverse=True)
-        
-        indices_to_keep = set()
-        for rank, idx in enumerate(sorted_indices):
-            # Keep it if it meets the high-attention threshold OR if we haven't satisfied the minimum safety net
-            if scored_sentences[idx]['norm_score'] >= keep_threshold or rank < min_keep:
-                indices_to_keep.add(idx)
 
-        # 5. Reconstruct exactly in original document order
         for idx, s in enumerate(scored_sentences):
-            is_retained = idx in indices_to_keep
+            is_retained = s['score'] >= keep_threshold and len(filtered_sentences) < num_keep
             if is_retained:
                 filtered_sentences.append(s['text'])
-            
+                indices_to_keep.append(idx)
+
             quitox_details.append({
                 "text": s['text'],
-                "score": round(s['norm_score'], 3), 
-                "raw_score": round(s['raw_score'], 5),
+                "score": round(s['score'], 4),
                 "retained": is_retained
             })
 
         return {
             "filtered_sentences": filtered_sentences,
-            "kept_indices": sorted(indices_to_keep),  
+            "kept_indices": indices_to_keep,        # ← needed by HybridCompressor for doc-map sync
             "total_tokens_consumed": total_tokens,
             "quitox_details": quitox_details
         }
