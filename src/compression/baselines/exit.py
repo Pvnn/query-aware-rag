@@ -29,7 +29,7 @@ class EXITCompressor(BaseCompressor):
         checkpoint: str = None,
         device: str = None,
         cache_dir: str = "./cache",
-        batch_size: int = 8,
+        batch_size: int = 2,
         threshold: float = 0.5
     ):
         self.batch_size = batch_size
@@ -97,11 +97,14 @@ class EXITCompressor(BaseCompressor):
 
     @lru_cache(maxsize=1024)
     def _generate_prompt(self, query: str, context: str, sentence: str) -> str:
-        """Cached prompt generation — identical to official."""
+        """Cached prompt generation — with Safe Context Truncation."""
+        max_context_chars = 12000
+        safe_context = context[:max_context_chars] + ("..." if len(context) > max_context_chars else "")
+
         return (
             f'<start_of_turn>user\n'
             f'Query:\n{query}\n'
-            f'Full context:\n{context}\n'
+            f'Full context:\n{safe_context}\n'
             f'Sentence:\n{sentence}\n'
             f'Is this sentence useful in answering the query? '
             f'Answer only "Yes" or "No".<end_of_turn>\n'
@@ -159,31 +162,41 @@ class EXITCompressor(BaseCompressor):
         documents: List[SearchResult]
     ) -> List[SearchResult]:
         """
-        Compress documents using context-aware extraction.
+        Compress documents using context-aware extraction, evaluating 
+        each sentence against its specific parent document to prevent truncation.
         """
-        context = "\n".join(
-            f"{doc.title}\n{doc.text}" if doc.title else doc.text
-            for doc in documents
-        )
-
-        all_sentences = [
-            sent.text.strip()
-            for sent in self.nlp(context).sents
-            if sent.text.strip()
-        ]
+        all_sentences = []
+        all_contexts = []
+        
+        # Process document by document to map sentences to their parent text
+        for doc in documents:
+            doc_context = f"{doc.title}\n{doc.text}" if doc.title else doc.text
+            
+            # Extract sentences just for this document
+            sents = [
+                sent.text.strip()
+                for sent in self.nlp(doc_context).sents
+                if sent.text.strip()
+            ]
+            
+            all_sentences.extend(sents)
+            # Map each sentence to its specific parent document context
+            all_contexts.extend([doc_context] * len(sents))
 
         if not all_sentences:
             return [SearchResult(evi_id=0, docid=0, title="", text="", score=1.0)]
+            
         selected_sentences = []
 
+        # Batch process using the perfectly mapped parent contexts
         for i in range(0, len(all_sentences), self.batch_size):
-            batch = all_sentences[i : i + self.batch_size]
-            queries = [query] * len(batch)
-            contexts = [context] * len(batch)
+            batch_sents = all_sentences[i : i + self.batch_size]
+            batch_queries = [query] * len(batch_sents)
+            batch_contexts = all_contexts[i : i + self.batch_size]
 
-            _, probs = self._predict_batch(queries, contexts, batch)
+            _, probs = self._predict_batch(batch_queries, batch_contexts, batch_sents)
 
-            for sent, yes_prob in zip(batch, probs[:, 0].tolist()):
+            for sent, yes_prob in zip(batch_sents, probs[:, 0].tolist()):
                 if yes_prob >= self.threshold:
                     selected_sentences.append(sent)
 

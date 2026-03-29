@@ -24,7 +24,10 @@ class QuitoxCoarseFilter:
         print(f"Loading QUITO-X model ({model_name}) on device: {self.device.upper()}")
         
         self.tokenizer = T5Tokenizer.from_pretrained(model_name, legacy=False)
-        self.model = T5ForConditionalGeneration.from_pretrained(model_name).to(self.device)
+        self.model = T5ForConditionalGeneration.from_pretrained(
+            model_name, 
+            torch_dtype=torch.float16
+        ).to(self.device)
         self.model.eval()
 
     def _softmax(self, x, axis=0):
@@ -40,10 +43,8 @@ class QuitoxCoarseFilter:
         for idx, sent in enumerate(sentences):
             prefix = " " if idx > 0 and not sent.startswith(" ") else ""
             ids = self.tokenizer.encode(prefix + sent, add_special_tokens=False)
-            
             start_idx = len(flat_ids)
             end_idx = start_idx + len(ids)
-            
             boundaries.append((start_idx, end_idx))
             flat_ids.extend(ids)
 
@@ -51,33 +52,65 @@ class QuitoxCoarseFilter:
         token_attentions = np.zeros(len(flat_ids))
         total_tokens_consumed = 0
         
+        # 1. Group tokens into structural chunks
+        all_chunk_ids = []
         for i in range(0, len(flat_ids), max_chunk):
-            chunk_ids = flat_ids[i : i + max_chunk]
-            input_ids = chunk_ids + query_ids + [self.tokenizer.eos_token_id]
-            total_tokens_consumed += len(input_ids)
+            all_chunk_ids.append(flat_ids[i : i + max_chunk])
             
-            input_tensor = torch.tensor([input_ids]).to(self.device)
-            decoder_input = torch.tensor([[self.model.config.decoder_start_token_id]]).to(self.device)
-            
-            with torch.no_grad():
-                outputs = self.model(input_ids=input_tensor, decoder_input_ids=decoder_input, output_attentions=True)
-        
-            attentions = outputs.cross_attentions[-1][0, :, 0, :].mean(dim=0).cpu().numpy()
-            chunk_attn = attentions[:len(chunk_ids)]
-            token_attentions[i : i + len(chunk_ids)] = chunk_attn
+        if not all_chunk_ids:
+            return [0.0] * len(sentences), 0
 
+        # 2. Process Chunks in Parallel Batches
+        batch_size = 16  # T5-small easily fits 16 chunks in VRAM
+        
+        for i in range(0, len(all_chunk_ids), batch_size):
+            batch_chunks = all_chunk_ids[i : i + batch_size]
+            
+            # Prepare inputs with query + EOS
+            batch_input_ids = [chunk + query_ids + [self.tokenizer.eos_token_id] for chunk in batch_chunks]
+            
+            # Dynamic Padding for the batch
+            max_len = max(len(ids) for ids in batch_input_ids)
+            padded_inputs = [ids + [self.tokenizer.pad_token_id] * (max_len - len(ids)) for ids in batch_input_ids]
+            attention_mask = [[1] * len(ids) + [0] * (max_len - len(ids)) for ids in batch_input_ids]
+
+            # Move tensors to GPU
+            input_tensor = torch.tensor(padded_inputs).to(self.device, non_blocking=True)
+            mask_tensor = torch.tensor(attention_mask).to(self.device, non_blocking=True)
+            decoder_input = torch.tensor([[self.model.config.decoder_start_token_id]] * len(batch_chunks)).to(self.device, non_blocking=True)
+            
+            total_tokens_consumed += sum(len(ids) for ids in batch_input_ids)
+
+            # FIX 3: Hardware-accelerated Autocast
+            with torch.no_grad(), torch.autocast("cuda", dtype=torch.float16):
+                outputs = self.model(
+                    input_ids=input_tensor,
+                    attention_mask=mask_tensor,
+                    decoder_input_ids=decoder_input,
+                    output_attentions=True
+                )
+        
+            # Extract Cross-Attentions (Mean across all heads)
+            # Shape: (Batch, Seq_Len)
+            attentions = outputs.cross_attentions[-1][:, :, 0, :].mean(dim=1).cpu().numpy()
+            
+            # Map batch attentions back to the global token array
+            for j, chunk_attn in enumerate(attentions):
+                global_idx = (i + j) * max_chunk
+                valid_len = len(batch_chunks[j])
+                token_attentions[global_idx : global_idx + valid_len] = chunk_attn[:valid_len]
+
+        # 3. Apply smoothing to the contiguous token array
         if len(token_attentions) > 0:
             smoothed_attentions = gaussian_filter1d(token_attentions, sigma=2.0)
         else:
             smoothed_attentions = token_attentions
 
+        # 4. Extract Max token-score per sentence using our exact boundaries
         sent_scores = []
         for start, end in boundaries:
             segment = smoothed_attentions[start:end]
-            if len(segment) > 0:
-                score = np.max(segment)
-            else:
-                score = 0.0
+            score = np.max(segment) if len(segment) > 0 else 0.0
             sent_scores.append(float(score))
 
         return sent_scores, total_tokens_consumed

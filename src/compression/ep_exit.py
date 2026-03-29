@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import List
 import networkx as nx
 from sentence_transformers import SentenceTransformer, util
+import torch
 
 from src.compression.exit_baseline import ExitBaselineCompressor
 
@@ -30,8 +31,10 @@ class EPExitCompressor:
         self.similarity_threshold = similarity_threshold
         self.locality_window = locality_window
         self.threshold = threshold
-        
-        self.embedder = SentenceTransformer(embedding_model)
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.embedder = SentenceTransformer(embedding_model, device=self.device)
+        if self.device == "cuda":
+            self.embedder.half()
         self.exit = ExitBaselineCompressor(
             token=token, 
             model_name=model_name, 
@@ -46,17 +49,24 @@ class EPExitCompressor:
         return self.exit.classify_sentence(query, sentence, document)
 
     def build_similarity_graph(self, sentences):
-        embeddings = self.embedder.encode(sentences, convert_to_tensor=True)
+        embeddings = self.embedder.encode(
+            sentences, 
+            convert_to_tensor=True,
+            batch_size=64, 
+            normalize_embeddings=True 
+        )
+        
         sim_matrix = util.cos_sim(embeddings, embeddings)
+        sim_matrix_cpu = sim_matrix.cpu().numpy()
+        
         n = len(sentences)
         G = nx.Graph()
         G.add_nodes_from(range(n))
         
         for i in range(n):
-            for j in range(i + 1, n):
-                if abs(i - j) > self.locality_window:
-                    continue
-                if float(sim_matrix[i][j]) >= self.similarity_threshold:
+            limit = min(i + 1 + self.locality_window, n)
+            for j in range(i + 1, limit):
+                if sim_matrix_cpu[i][j] >= self.similarity_threshold:
                     G.add_edge(i, j)
         return G
 
@@ -73,6 +83,7 @@ class EPExitCompressor:
                     end_idx=idxs[-1],
                 )
             )
+        units.sort(key=lambda u: u.start_idx)
         return units
 
     def compress(self, query: str, document: str) -> str:
@@ -99,43 +110,42 @@ class EPExitCompressor:
 
         return " ".join(sentences[i] for i in sorted(kept_indices))
 
-    def compress_with_stats(self, query, document):
-        sentences = self.decompose_sentences(document)
-        
+    # Update this method inside your EPExitCompressor class
+    def compress_with_stats(self, query, sentences, parent_contexts=None):
         if not sentences:
             return {
-                "compressed_text": "",
-                "original_length": 0,
-                "compressed_length": 0,
-                "compression_ratio": 0.0,
-                "sentences_kept": 0,
-                "sentences_total": 0,
-                "evidence_units_total": 0,
-                "evidence_units_kept_count": 0,
-                "evidence_units_removed_count": 0,
-                "total_tokens_consumed": 0,
-                "all_units": [],
-                "kept_units": [],
-                "removed_units": []
+                "compressed_text": "", "original_length": 0, "compressed_length": 0,
+                "compression_ratio": 0.0, "sentences_kept": 0, "sentences_total": 0,
+                "evidence_units_total": 0, "evidence_units_kept_count": 0,
+                "evidence_units_removed_count": 0, "total_tokens_consumed": 0,
+                "all_units": [], "kept_units": [], "removed_units": []
             }
 
         graph = self.build_similarity_graph(sentences)
         units = self.extract_evidence_units(graph, sentences)
 
-        unit_texts   = [unit.text for unit in units]
+        unit_texts = [unit.text for unit in units]
         queries_list = [query] * len(unit_texts)
+        
+        # Grab the specific parent context for the first sentence of each EvidenceUnit
+        if parent_contexts:
+            unit_contexts = [parent_contexts[unit.indices[0]] for unit in units]
+        else:
+            unit_contexts = [" ".join(sentences)] * len(units)
 
         kept_indices = set()
         all_units_info, kept_units_info, removed_units_info = [], [], []
         total_tokens = 0
 
         for i in range(0, len(unit_texts), self.exit.batch_size):
-            batch_texts   = unit_texts[i : i + self.exit.batch_size]
+            batch_texts = unit_texts[i : i + self.exit.batch_size]
             batch_queries = queries_list[i : i + self.exit.batch_size]
-            batch_units   = units[i : i + self.exit.batch_size]
+            batch_contexts = unit_contexts[i : i + self.exit.batch_size]
+            batch_units = units[i : i + self.exit.batch_size]
 
+            # Pass the list of mapped contexts!
             yes_probs, batch_tokens = self.exit._predict_batch(
-                batch_queries, batch_texts, document
+                batch_queries, batch_contexts, batch_texts
             )
             total_tokens += batch_tokens
 
@@ -156,9 +166,9 @@ class EPExitCompressor:
         compressed_text = " ".join(sentences[i] for i in sorted(kept_indices))
         return {
             "compressed_text": compressed_text,
-            "original_length": len(document),
+            "original_length": sum(len(c) for c in set(parent_contexts)) if parent_contexts else 0,
             "compressed_length": len(compressed_text),
-            "compression_ratio": len(compressed_text) / len(document) if document else 0.0,
+            "compression_ratio": len(compressed_text) / sum(len(c) for c in set(parent_contexts)) if parent_contexts else 0.0,
             "sentences_kept": len(kept_indices),
             "sentences_total": len(sentences),
             "evidence_units_total": len(units),
