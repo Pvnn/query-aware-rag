@@ -1,26 +1,16 @@
 #!/bin/bash
-
-# Force Python to use UTF-8
 export PYTHONIOENCODING=utf-8
-
-# Default to n=20 if no argument is provided
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 N_SAMPLES=${1:-20}
 LOG_DIR="logs"
 MASTER_LOG="$LOG_DIR/master_eval.log"
-
-# Create logs directory if it doesn't exist
 mkdir -p "$LOG_DIR"
-
-# Initialize master log
 echo "======================================================" > "$MASTER_LOG"
 echo "Starting Evaluation Pipeline with n=$N_SAMPLES" >> "$MASTER_LOG"
 echo "Date: $(date)" >> "$MASTER_LOG"
 echo "======================================================" >> "$MASTER_LOG"
-
-# Exact order of datasets
-DATASETS=("2wiki" "tqa" "hotpotqa" "nq")
+DATASETS=("2wiki" "tqa" "hotpotqa" "nq" "asqa")
 TOTAL_DATASETS=${#DATASETS[@]}
-
 for i in "${!DATASETS[@]}"; do
     DATASET="${DATASETS[$i]}"
     SCRIPT_LOG="$LOG_DIR/${DATASET}.log"
@@ -30,10 +20,7 @@ for i in "${!DATASETS[@]}"; do
     echo "Running evaluation for: $DATASET" | tee -a "$MASTER_LOG"
     echo "Command: python -m $MODULE_NAME -n $N_SAMPLES" | tee -a "$MASTER_LOG"
     
-    # Execute python, capture stdout and stderr, write to individual log AND master log
     python -m "$MODULE_NAME" -n "$N_SAMPLES" 2>&1 | tee "$SCRIPT_LOG" | tee -a "$MASTER_LOG"
-    
-    # Capture the exit code of the python command (not the tee command)
     EXIT_CODE=${PIPESTATUS[0]}
     
     if [ $EXIT_CODE -ne 0 ]; then
@@ -42,15 +29,12 @@ for i in "${!DATASETS[@]}"; do
     else
         echo "SUCCESS: $DATASET evaluation completed." | tee -a "$MASTER_LOG"
     fi
-    
-    # Sleep for 2 minutes (120s) to let the GPU rest, unless it's the last dataset
-    if [ $((i + 1)) -ne $TOTAL_DATASETS ]; then
-        echo "Sleeping for 2 minutes to let GPU cool down..." | tee -a "$MASTER_LOG"
-        sleep 120
+
+    if [ $i -lt $((TOTAL_DATASETS - 1)) ]; then
+        echo "Sleeping for 1 minute to let the GPU cool down and clear VRAM..." | tee -a "$MASTER_LOG"
+        sleep 60
     fi
 done
 
-echo -e "\n======================================================" | tee -a "$MASTER_LOG"
-echo "All evaluations in the pipeline have finished." | tee -a "$MASTER_LOG"
-
-# ./run_eval.sh 5
+echo -e "\n======================================================" >> "$MASTER_LOG"
+echo "All evaluations in the pipeline have finished." >> "$MASTER_LOG"

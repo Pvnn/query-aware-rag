@@ -33,12 +33,12 @@ class CompactCompressor(BaseCompressor):
         self.device = device
         self.batch_size = batch_size
 
-        print(f"Initializing CompAct Compressor with {model_dir} in fp16...")
+        print(f"Initializing CompAct Compressor with {model_dir} in bfloat16...")
 
         self.model = AutoModelForCausalLM.from_pretrained(
             model_dir,
-            dtype=torch.float16,
-            device_map="auto",
+            dtype=torch.bfloat16, 
+            device_map={"": 0},  
             cache_dir=cache_dir,
             token=token
         )
@@ -150,13 +150,14 @@ class CompactCompressor(BaseCompressor):
                     max_length=1500
                 ).to(self.device)
 
-                outputs = self.model.generate(
-                    input_ids=inputs.input_ids,
-                    attention_mask=inputs.attention_mask,
-                    max_new_tokens=500,
-                    do_sample=False, # FIX: Replaces deprecated temperature=0
-                    pad_token_id=self.tokenizer.eos_token_id,
-                )
+                with torch.autocast("cuda", dtype=torch.bfloat16):
+                    outputs = self.model.generate(
+                        input_ids=inputs.input_ids,
+                        attention_mask=inputs.attention_mask,
+                        max_new_tokens=500,
+                        do_sample=False,
+                        pad_token_id=self.tokenizer.eos_token_id,
+                    )
 
             output_text = self.tokenizer.decode(
                 outputs[0][inputs.input_ids.size(1):],

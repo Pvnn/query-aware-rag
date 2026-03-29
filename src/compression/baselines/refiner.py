@@ -36,10 +36,12 @@ class RefinerCompressor(BaseCompressor):
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.padding_side = "left"
 
+        print(f"Initializing Refiner Compressor in bfloat16...")
+
         self.base_model = AutoModelForCausalLM.from_pretrained(
             base_model,
-            dtype=torch.float16,
-            device_map="auto",
+            dtype=torch.bfloat16,
+            device_map={"": 0},         
             trust_remote_code=True,
             cache_dir=cache_dir,
             token=token 
@@ -51,7 +53,7 @@ class RefinerCompressor(BaseCompressor):
             is_trainable=False,
             token=token  
         )
-
+        
         self.model.eval()
 
         self.template = (
@@ -101,13 +103,14 @@ class RefinerCompressor(BaseCompressor):
         ).to(self.device)
 
         with torch.no_grad():            
-            outputs = self.model.generate(
-                **inputs,
-                top_p=1,
-                temperature=None,
-                do_sample=False,
-                max_new_tokens=512
-            )
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                outputs = self.model.generate(
+                    **inputs,
+                    top_p=1,
+                    temperature=None,
+                    do_sample=False,
+                    max_new_tokens=512
+                )
 
         generated = outputs[0][inputs["input_ids"].shape[1]:]
 

@@ -32,16 +32,24 @@ class HybridCompressor:
             self.device = device
 
         print("\n🔗 Initializing HYBRID COMPRESSION PIPELINE...")
-
-        # Load spacy
+        
         try:
-            self.nlp = spacy.load("en_core_web_sm")
+            self.nlp = spacy.load(
+                "en_core_web_sm",
+                disable=["tok2vec", "tagger", "parser", "attribute_ruler", "lemmatizer", "ner"]
+            )
+            self.nlp.enable_pipe("senter")
+            self.nlp.max_length = 2000000
         except OSError:
             print("Downloading spacy model...")
             from spacy.cli import download
-
             download("en_core_web_sm")
-            self.nlp = spacy.load("en_core_web_sm")
+            self.nlp = spacy.load(
+                "en_core_web_sm",
+                disable=["tok2vec", "tagger", "parser", "attribute_ruler", "lemmatizer", "ner"]
+            )
+            self.nlp.enable_pipe("senter")
+            self.nlp.max_length = 2000000
 
         # Stage 3
         print("--- [Stage 3] Loading QUITO-X ---")
@@ -52,7 +60,7 @@ class HybridCompressor:
         self.exit = EPExitCompressor(
             token=exit_token,
             model_name=exit_model,
-            threshold=0.5,
+            threshold=0.4,
             #batch_size=batch_size, # <--- Pass batch_size to EP-EXIT
         )
 
@@ -127,14 +135,21 @@ class HybridCompressor:
             quitox_details = quitox_result.get("quitox_details", [])
             quitox_time    = time.time() - t1
 
+        # Locate this block inside HybridCompressor.compress()
         stage3_count = len(current_sentences)
 
         if use_fine:
-            coarse_context_str = " ".join(current_sentences)
+            # FIX: Create a list mapping each sentence to its specific parent document text!
+            parent_contexts = [doc_obj.text for _, doc_obj in current_doc_map]
+            
             self.exit.threshold = fine_threshold
 
             t2 = time.time()
-            exit_result = self.exit.compress_with_stats(query, coarse_context_str)
+            exit_result = self.exit.compress_with_stats(
+                query=query, 
+                sentences=current_sentences, 
+                parent_contexts=parent_contexts  # Passed directly
+            )
             exit_time = time.time() - t2
 
             final_text          = exit_result["compressed_text"]
@@ -147,7 +162,6 @@ class HybridCompressor:
                 enriched = []
                 for unit in units:
                     unit_sents = unit.get("sentences", [unit.get("text", "")])
-                    # Find the most common doc for sentences in this unit
                     doc_indices = [
                         sent_to_doc.get(s, (0, source_docs[0]))[0]
                         for s in unit_sents
